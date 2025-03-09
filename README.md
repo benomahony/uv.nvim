@@ -197,7 +197,7 @@ require('uv').setup({
   -- Auto commands for directory changes
   auto_commands = true,
 
-  -- Integration with picker (like Telescope or other UI components)
+  -- Integration with snacks picker
   picker_integration = true,
 
   -- Keymaps to register (set to false to disable)
