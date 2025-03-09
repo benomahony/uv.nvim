@@ -1,13 +1,13 @@
 # uv.nvim
 
-A Neovim plugin providing integration with the [UV](https://github.com/astral-sh/uv) Python package manager, offering a smooth workflow for Python development in Neovim.
+A Neovim plugin providing integration with the [uv](https://github.com/astral-sh/uv) Python package manager, offering a smooth workflow for Python development in Neovim.
 
 ## Features
 
 - Run Python code directly from Neovim
 - Execute selected code snippets with context preservation
 - Run specific functions with automatic module imports
-- Manage Python packages with UV commands
+- Manage Python packages with uv commands
 - Automatically activate virtual environments
 - Integration with UI pickers (like Snacks.nvim)
 
@@ -40,7 +40,7 @@ You can customize any part of the configuration to fit your workflow.
 ## Requirements
 
 - Neovim 0.7.0 or later
-- [UV](https://github.com/astral-sh/uv) installed on your system
+- [uv](https://github.com/astral-sh/uv) installed on your system
 - For UI picker integration, a compatible UI picker (like [Snacks.nvim](https://github.com/folke/snacks.nvim))
 
 ## Usage
@@ -49,7 +49,7 @@ You can customize any part of the configuration to fit your workflow.
 
 uv.nvim provides several commands:
 
-- `:UVInit` - Initialize a new UV project
+- `:UVInit` - Initialize a new uv project
 - `:UVRunFile` - Run the current Python file
 - `:UVRunSelection` - Run the selected Python code
 - `:UVRunFunction` - Run a specific function from the current file
@@ -58,12 +58,12 @@ uv.nvim provides several commands:
 
 All keymaps use the `<leader>x` prefix by default:
 
-- `<leader>x` - Show UV commands menu (requires UI picker integration)
+- `<leader>x` - Show uv commands menu (requires UI picker integration)
 - `<leader>xr` - Run current file
 - `<leader>xs` - Run selected code (in visual mode)
 - `<leader>xf` - Run a specific function
 - `<leader>xe` - Environment management
-- `<leader>xi` - Initialize UV project
+- `<leader>xi` - Initialize uv project
 - `<leader>xa` - Add a package
 - `<leader>xd` - Remove a package
 - `<leader>xc` - Sync packages
@@ -122,7 +122,7 @@ For advanced usage or integration with other plugins:
 ```lua
 local uv = require('uv')
 
--- Run a command with UV
+-- Run a command with uv
 uv.run_command('uv add pandas')
 
 -- Activate a virtual environment
@@ -158,7 +158,7 @@ require('uv').setup({
 ```lua
 require('uv').setup({
   execution = {
-    run_command = "python -m",  -- Use standard Python instead of UV
+    run_command = "python -m",  -- Use standard Python instead of uv
   }
 })
 ```
@@ -173,7 +173,7 @@ require('uv').setup({
 
 ## Troubleshooting
 
-- **Command execution errors**: Make sure UV is installed and in your PATH.
+- **Command execution errors**: Make sure uv is installed and in your PATH.
 - **Virtual environment not activating**: Check if the `.venv` directory exists in your project root.
 - **Output not showing**: Check notification settings in your Neovim configuration.
 
@@ -202,13 +202,13 @@ require('uv').setup({
 
   -- Keymaps to register (set to false to disable)
   keymaps = {
-    prefix = "<leader>x",  -- Main prefix for UV commands
-    commands = true,       -- Show UV commands menu (<leader>x)
+    prefix = "<leader>x",  -- Main prefix for uv commands
+    commands = true,       -- Show uv commands menu (<leader>x)
     run_file = true,       -- Run current file (<leader>xr)
     run_selection = true,  -- Run selected code (<leader>xs)
     run_function = true,   -- Run function (<leader>xf)
     venv = true,           -- Environment management (<leader>xe)
-    init = true,           -- Initialize UV project (<leader>xi)
+    init = true,           -- Initialize uv project (<leader>xi)
     add = true,            -- Add a package (<leader>xa)
     remove = true,         -- Remove a package (<leader>xd)
     sync = true,           -- Sync packages (<leader>xc)
