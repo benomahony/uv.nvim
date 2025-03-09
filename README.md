@@ -17,7 +17,7 @@ Using [packer.nvim](https://github.com/wbthomason/packer.nvim):
 
 ```lua
 use {
-  'username/uv.nvim',
+  'benomahony/uv.nvim',
   config = function()
     require('uv').setup()
   end
@@ -28,7 +28,7 @@ Using [lazy.nvim](https://github.com/folke/lazy.nvim):
 
 ```lua
 {
-  'username/uv.nvim',
+  'benomahony/uv.nvim',
   config = function()
     require('uv').setup()
   end,
