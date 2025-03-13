@@ -11,6 +11,10 @@ A Neovim plugin providing integration with the [uv](https://github.com/astral-sh
 - Automatically activate virtual environments
 - Integration with UI pickers (like Snacks.nvim)
 
+## Demo:
+
+https://github.com/user-attachments/assets/c7d59646-d2a0-406a-8bec-cf7f4cf38b51
+
 ## Installation
 
 Using [packer.nvim](https://github.com/wbthomason/packer.nvim):
