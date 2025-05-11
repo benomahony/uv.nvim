@@ -27,6 +27,7 @@ M.config = {
 		add = true, -- Add a package (<leader>xa)
 		remove = true, -- Remove a package (<leader>xd)
 		sync = true, -- Sync packages (<leader>xc)
+		sync_all = true, -- uv sync --all-extras --all-groups --all-packages (<leader>xC)
 	},
 
 	-- Execution options
@@ -459,6 +460,10 @@ function M.setup_pickers()
 					{ text = "Run function", desc = "Run specific Python function", is_run_function = true },
 					{ text = "uv add [package]", desc = "Install a package" },
 					{ text = "uv sync", desc = "Sync packages from lockfile" },
+					{
+						text = "uv sync --all-extras --all-packages --all-groups",
+						desc = "Sync all extras, groups and packages",
+					},
 					{ text = "uv remove [package]", desc = "Remove a package" },
 					{ text = "uv init", desc = "Initialize a new project" },
 				}
@@ -691,8 +696,15 @@ function M.setup_keymaps()
 			{ noremap = true, silent = true, desc = "UV Sync Packages" }
 		)
 	end
+	if keymaps.sync_all then
+		vim.api.nvim_set_keymap(
+			"n",
+			prefix .. "C",
+			"<cmd>lua require('uv').run_command('uv sync --all-extras --all-packages --all-groups')<CR>",
+			{ noremap = true, silent = true, desc = "UV Sync All Extras, Groups and Packages" }
+		)
+	end
 end
-
 -- Set up auto commands
 function M.setup_autocommands()
 	if M.config.auto_commands then
