@@ -216,6 +216,7 @@ require('uv').setup({
     add = true,            -- Add a package (<leader>xa)
     remove = true,         -- Remove a package (<leader>xd)
     sync = true,           -- Sync packages (<leader>xc)
+    sync_all = true,       -- Sync all packages, extras and groups (<leader>xC)
   },
 
   -- Execution options
@@ -229,4 +230,5 @@ require('uv').setup({
     -- Notification timeout in ms
     notification_timeout = 10000,
   },
+})
 ```
