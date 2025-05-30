@@ -9,13 +9,24 @@ A Neovim plugin providing integration with the [uv](https://github.com/astral-sh
 - Run specific functions with automatic module imports
 - Manage Python packages with uv commands
 - Automatically activate virtual environments
-- Integration with UI pickers (like Snacks.nvim)
+- Integration with UI pickers (like Telescope and Snacks.nvim)
 
-## Demo:
+## Demo
 
-https://github.com/user-attachments/assets/c7d59646-d2a0-406a-8bec-cf7f4cf38b51
+<https://github.com/user-attachments/assets/c7d59646-d2a0-406a-8bec-cf7f4cf38b51>
 
 ## Installation
+
+Using [lazy.nvim](https://github.com/folke/lazy.nvim):
+
+```lua
+return {
+  "benomahony/uv.nvim",
+  opts = {
+    picker_integration = true,
+  },
+}
+```
 
 Using [packer.nvim](https://github.com/wbthomason/packer.nvim):
 
@@ -28,24 +39,13 @@ use {
 }
 ```
 
-Using [lazy.nvim](https://github.com/folke/lazy.nvim):
-
-```lua
-{
-  'benomahony/uv.nvim',
-  config = function()
-    require('uv').setup()
-  end,
-}
-```
-
 You can customize any part of the configuration to fit your workflow.
 
 ## Requirements
 
 - Neovim 0.7.0 or later
 - [uv](https://github.com/astral-sh/uv) installed on your system
-- For UI picker integration, a compatible UI picker (like [Snacks.nvim](https://github.com/folke/snacks.nvim))
+- For UI picker integration, a compatible UI picker (like [Snacks.nvim](https://github.com/folke/snacks.nvim) or [Telescope.nvim](https://github.com/nvim-telescope/telescope.nvimhttps://github.com/nvim-telescope/telescope.nvim))
 
 ## Usage
 
