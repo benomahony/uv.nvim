@@ -569,6 +569,152 @@ function M.setup_pickers()
 			end,
 		}
 	end
+
+	-- Check if Telescope is available
+	local has_telescope, telescope = pcall(require, "telescope")
+	if has_telescope then
+		local pickers = require("telescope.pickers")
+		local finders = require("telescope.finders")
+		local sorters = require("telescope.sorters")
+		local actions = require("telescope.actions")
+		local action_state = require("telescope.actions.state")
+
+		-- UV Commands picker for Telescope
+		M.pick_uv_commands = function()
+			local items = {
+				{ text = "Run current file", is_run_current = true },
+				{ text = "Run selection", is_run_selection = true },
+				{ text = "Run function", is_run_function = true },
+				{ text = "uv add [package]", cmd = "uv add ", needs_input = true },
+				{ text = "uv sync", cmd = "uv sync" },
+				{
+					text = "uv sync --all-extras --all-packages --all-groups",
+					cmd = "uv sync --all-extras --all-packages --all-groups",
+				},
+				{ text = "uv remove [package]", cmd = "uv remove ", needs_input = true },
+				{ text = "uv init", cmd = "uv init" },
+			}
+
+			pickers
+				.new({}, {
+					prompt_title = "UV Commands",
+					finder = finders.new_table({
+						results = items,
+						entry_maker = function(entry)
+							return {
+								value = entry,
+								display = entry.text,
+								ordinal = entry.text,
+							}
+						end,
+					}),
+					sorter = sorters.get_generic_fuzzy_sorter(),
+					attach_mappings = function(prompt_bufnr, map)
+						local function on_select()
+							local selection = action_state.get_selected_entry().value
+							actions.close(prompt_bufnr)
+							if selection.is_run_current then
+								M.run_file()
+							elseif selection.is_run_selection then
+								local mode = vim.fn.mode()
+								if mode == "v" or mode == "V" or mode == "" then
+									vim.cmd("normal! \27")
+									vim.defer_fn(function()
+										M.run_python_selection()
+									end, 100)
+								else
+									vim.notify(
+										"Please select text first. Enter visual mode (v) and select code to run.",
+										vim.log.levels.INFO
+									)
+									vim.api.nvim_create_autocmd("ModeChanged", {
+										pattern = "[vV\x16]*:n",
+										callback = function()
+											M.run_python_selection()
+											return true
+										end,
+										once = true,
+									})
+								end
+							elseif selection.is_run_function then
+								M.run_python_function()
+							else
+								if selection.needs_input then
+									local placeholder = selection.text:match("%[(.-)%]")
+									vim.ui.input(
+										{ prompt = "Enter " .. (placeholder or "value") .. ": " },
+										function(input)
+											if input and input ~= "" then
+												local cmd = selection.cmd .. input
+												M.run_command(cmd)
+											else
+												vim.notify("Cancelled", vim.log.levels.INFO)
+											end
+										end
+									)
+								else
+									M.run_command(selection.cmd)
+								end
+							end
+						end
+
+						map("i", "<CR>", on_select)
+						map("n", "<CR>", on_select)
+						return true
+					end,
+				})
+				:find()
+		end
+
+		-- UV venv picker for Telescope
+		M.pick_uv_venv = function()
+			local items = {}
+			if vim.fn.isdirectory(".venv") == 1 then
+				table.insert(items, {
+					text = ".venv",
+					path = vim.fn.getcwd() .. "/.venv",
+					is_current = vim.env.VIRTUAL_ENV and vim.env.VIRTUAL_ENV:match(".venv$") ~= nil,
+				})
+			end
+			if #items == 0 then
+				table.insert(items, { text = "Create new virtual environment (uv venv)", is_create = true })
+			end
+
+			pickers
+				.new({}, {
+					prompt_title = "UV Virtual Environments",
+					finder = finders.new_table({
+						results = items,
+						entry_maker = function(entry)
+							local display = entry.is_create and "+ " .. entry.text
+								or ((entry.is_current and "● " or "○ ") .. entry.text .. " (Activate)")
+							return {
+								value = entry,
+								display = display,
+								ordinal = display,
+							}
+						end,
+					}),
+					sorter = sorters.get_generic_fuzzy_sorter(),
+					attach_mappings = function(prompt_bufnr, map)
+						local function on_select()
+							local selection = action_state.get_selected_entry().value
+							actions.close(prompt_bufnr)
+							if selection.is_create then
+								M.run_command("uv venv")
+							else
+								M.activate_venv(selection.path)
+							end
+						end
+
+						map("i", "<CR>", on_select)
+						map("n", "<CR>", on_select)
+						return true
+					end,
+				})
+				:find()
+		end
+	end
 end
 
 -- Set up user commands
@@ -615,6 +761,21 @@ function M.setup_keymaps()
 				{ noremap = true, silent = true, desc = "UV Commands" }
 			)
 		end
+		local has_telescope = pcall(require, "telescope")
+		if has_telescope then
+			vim.api.nvim_set_keymap(
+				"n",
+				prefix,
+				"<cmd>lua require('uv').pick_uv_commands()<CR>",
+				{ noremap = true, silent = true, desc = "UV Commands (Telescope)" }
+			)
+			vim.api.nvim_set_keymap(
+				"v",
+				prefix,
+				":<C-u>lua require('uv').pick_uv_commands()<CR>",
+				{ noremap = true, silent = true, desc = "UV Commands (Telescope)" }
+			)
+		end
 	end
 
 	-- Run current file
@@ -648,13 +809,24 @@ function M.setup_keymaps()
 	end
 
 	-- Environment management
-	if keymaps.venv and _G.Snacks and _G.Snacks.picker then
-		vim.api.nvim_set_keymap(
-			"n",
-			prefix .. "e",
-			"<cmd>lua Snacks.picker.pick('uv_venv')<CR>",
-			{ noremap = true, silent = true, desc = "UV Environment" }
-		)
+	if keymaps.venv then
+		if _G.Snacks and _G.Snacks.picker then
+			vim.api.nvim_set_keymap(
+				"n",
+				prefix .. "e",
+				"<cmd>lua Snacks.picker.pick('uv_venv')<CR>",
+				{ noremap = true, silent = true, desc = "UV Environment" }
+			)
+		end
+		local has_telescope_venv = pcall(require, "telescope")
+		if has_telescope_venv then
+			vim.api.nvim_set_keymap(
+				"n",
+				prefix .. "e",
+				"<cmd>lua require('uv').pick_uv_venv()<CR>",
+				{ noremap = true, silent = true, desc = "UV Environment (Telescope)" }
+			)
+		end
 	end
 
 	-- Initialize UV project
