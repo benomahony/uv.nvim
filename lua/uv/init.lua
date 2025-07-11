@@ -8,6 +8,7 @@ local M = {}
 M.config = {
 	-- Auto-activate virtual environments when found
 	auto_activate_venv = true,
+	notify_activate_venv = true,
 
 	-- Auto commands for directory changes
 	auto_commands = true,
@@ -85,7 +86,9 @@ function M.activate_venv(venv_path)
 	vim.env.VIRTUAL_ENV = venv_path
 	vim.env.PATH = venv_path .. "/bin:" .. vim.env.PATH
 	-- Notify user
-	vim.notify("Activated virtual environment: " .. venv_path, vim.log.levels.INFO)
+	if M.config.notify_activate_venv then
+		vim.notify("Activated virtual environment: " .. venv_path, vim.log.levels.INFO)
+	end
 end
 
 -- Auto-activate the .venv if it exists at the project root

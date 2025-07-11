@@ -197,6 +197,7 @@ Here's the default configuration with all available options:
 require('uv').setup({
   -- Auto-activate virtual environments when found
   auto_activate_venv = true,
+  notify_activate_venv = true,
 
   -- Auto commands for directory changes
   auto_commands = true,
