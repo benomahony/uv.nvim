@@ -741,6 +741,16 @@ function M.setup_commands()
 	vim.api.nvim_create_user_command("UVRunFile", function()
 		M.run_file()
 	end, {})
+
+	-- Command to add a package
+	vim.api.nvim_create_user_command("UVAddPackage", function(opts)
+		M.run_command("uv add " .. opts.args)
+	end, { nargs = 1 })
+
+	-- Command to remove a package
+	vim.api.nvim_create_user_command("UVRemovePackage", function(opts)
+		M.run_command("uv remove " .. opts.args)
+	end, { nargs = 1 })
 end
 
 -- Set up keymaps
@@ -880,6 +890,7 @@ function M.setup_keymaps()
 		)
 	end
 end
+
 -- Set up auto commands
 function M.setup_autocommands()
 	if M.config.auto_commands then
