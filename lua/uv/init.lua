@@ -528,6 +528,14 @@ function M.setup_pickers()
 					{ text = "uv init", desc = "Initialize a new project" },
 				}
 			end,
+			preview = function(ctx)
+				local cmd = ctx.item.text:match("^(uv %a+)")
+				if cmd then
+					Snacks.picker.preview.cmd(cmd .. " --help", ctx)
+				else
+					ctx.preview:set_lines({})
+				end
+			end,
 			format = function(item)
 				return { { item.text .. " - " .. item.desc } }
 			end,
