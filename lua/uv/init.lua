@@ -909,10 +909,7 @@ function M.setup_autocommands()
 	end
 end
 
--- Main setup function
-function M.setup(opts)
-	-- Merge user configuration with defaults
-	M.config = vim.tbl_deep_extend("force", M.config, opts or {})
+function M.setup_python()
 
 	-- Set up commands
 	M.setup_commands()
@@ -934,6 +931,21 @@ function M.setup(opts)
 
 	-- Make run_command globally accessible (can be removed if not needed)
 	_G.run_command = M.run_command
+end
+
+-- Main setup function
+function M.setup(opts)
+	-- Merge user configuration with defaults
+	M.config = vim.tbl_deep_extend("force", M.config, opts or {})
+
+	-- Automatically setup for Python files
+	vim.api.nvim_create_autocmd("FileType", {
+		pattern = "python",
+		callback = function()
+			local bufnr = vim.api.nvim_get_current_buf()
+			M.setup_python(bufnr)
+		end,
+	})
 end
 
 return M
