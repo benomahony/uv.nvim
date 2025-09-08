@@ -61,7 +61,7 @@ You can customize any part of the configuration to fit your workflow.
 
 - Neovim 0.7.0 or later
 - [uv](https://github.com/astral-sh/uv) installed on your system
-- For UI picker integration, a compatible UI picker (like [Snacks.nvim](https://github.com/folke/snacks.nvim) or [Telescope.nvim](https://github.com/nvim-telescope/telescope.nvimhttps://github.com/nvim-telescope/telescope.nvim))
+- For UI picker integration, a compatible UI picker (like [Snacks.nvim](https://github.com/folke/snacks.nvim) or [Telescope.nvim](https://github.com/nvim-telescope/telescope.nvim))
 
 ## Usage
 
