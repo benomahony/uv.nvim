@@ -261,39 +261,8 @@ function M.run_python_selection()
 
 	-- Run the temp file
 	vim.notify("Running selected code...", vim.log.levels.INFO)
-	vim.fn.jobstart(M.config.execution.run_command .. " " .. vim.fn.shellescape(temp_file), {
-		on_stdout = function(_, data)
-			if data and #data > 1 then
-				local output = table.concat(data, "\n")
-				if output and output:match("%S") then
-					vim.notify(output, vim.log.levels.INFO, {
-						title = "Python Output",
-						timeout = M.config.execution.notification_timeout,
-					})
-				end
-			end
-		end,
-		on_stderr = function(_, data)
-			if data and #data > 1 then
-				local output = table.concat(data, "\n")
-				if output and output:match("%S") then
-					vim.notify(output, vim.log.levels.ERROR, {
-						title = "Python Error",
-						timeout = M.config.execution.notification_timeout,
-					})
-				end
-			end
-		end,
-		on_exit = function(_, exit_code)
-			if exit_code == 0 then
-				vim.notify("Selected code executed successfully", vim.log.levels.INFO)
-			else
-				vim.notify("Selected code execution failed with exit code: " .. exit_code, vim.log.levels.ERROR)
-			end
-		end,
-		stdout_buffered = true,
-		stderr_buffered = true,
-	})
+	vim.cmd("vsplit")
+	vim.cmd("term " .. M.config.execution.run_command .. " " .. vim.fn.shellescape(temp_file))
 end
 
 -- Function to run a specific Python function
