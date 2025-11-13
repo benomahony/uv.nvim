@@ -238,7 +238,7 @@ function M.run_python_selection()
 		if is_expression then
 			file:write("\n# Auto-added print for expression\n")
 			file:write('print(f"Expression result: {' .. selection:gsub("^%s+", ""):gsub("%s+$", "") .. '}")\n')
-		-- For function definitions without calls, we'll add a call
+			-- For function definitions without calls, we'll add a call
 		elseif is_function_def then
 			local function_name = selection:match("def%s+([%w_]+)%s*%(")
 			-- Check if the function is already called in the selection
@@ -250,7 +250,7 @@ function M.run_python_selection()
 				file:write("    if result is not None:\n")
 				file:write('        print(f"Return value: {result}")\n')
 			end
-		-- If there's no print statement in the code, add an output marker
+			-- If there's no print statement in the code, add an output marker
 		elseif not has_print and not selection:match("^%s*#") then
 			file:write("\n# Auto-added execution marker\n")
 			file:write('print("Code executed successfully.")\n')
@@ -261,39 +261,8 @@ function M.run_python_selection()
 
 	-- Run the temp file
 	vim.notify("Running selected code...", vim.log.levels.INFO)
-	vim.fn.jobstart(M.config.execution.run_command .. " " .. vim.fn.shellescape(temp_file), {
-		on_stdout = function(_, data)
-			if data and #data > 1 then
-				local output = table.concat(data, "\n")
-				if output and output:match("%S") then
-					vim.notify(output, vim.log.levels.INFO, {
-						title = "Python Output",
-						timeout = M.config.execution.notification_timeout,
-					})
-				end
-			end
-		end,
-		on_stderr = function(_, data)
-			if data and #data > 1 then
-				local output = table.concat(data, "\n")
-				if output and output:match("%S") then
-					vim.notify(output, vim.log.levels.ERROR, {
-						title = "Python Error",
-						timeout = M.config.execution.notification_timeout,
-					})
-				end
-			end
-		end,
-		on_exit = function(_, exit_code)
-			if exit_code == 0 then
-				vim.notify("Selected code executed successfully", vim.log.levels.INFO)
-			else
-				vim.notify("Selected code execution failed with exit code: " .. exit_code, vim.log.levels.ERROR)
-			end
-		end,
-		stdout_buffered = true,
-		stderr_buffered = true,
-	})
+	vim.cmd("vsplit")
+	vim.cmd("term " .. M.config.execution.run_command .. " " .. vim.fn.shellescape(temp_file))
 end
 
 -- Function to run a specific Python function
@@ -348,39 +317,8 @@ function M.run_python_function()
 
 		-- Run the temp file
 		vim.notify("Running function: " .. func_name, vim.log.levels.INFO)
-		vim.fn.jobstart(M.config.execution.run_command .. " " .. vim.fn.shellescape(temp_file), {
-			on_stdout = function(_, data)
-				if data and #data > 1 then
-					local output = table.concat(data, "\n")
-					if output and output:match("%S") then
-						vim.notify(output, vim.log.levels.INFO, {
-							title = "Function Output",
-							timeout = M.config.execution.notification_timeout,
-						})
-					end
-				end
-			end,
-			on_stderr = function(_, data)
-				if data and #data > 1 then
-					local output = table.concat(data, "\n")
-					if output and output:match("%S") then
-						vim.notify(output, vim.log.levels.ERROR, {
-							title = "Function Error",
-							timeout = M.config.execution.notification_timeout,
-						})
-					end
-				end
-			end,
-			on_exit = function(_, exit_code)
-				if exit_code == 0 then
-					vim.notify("Function executed successfully", vim.log.levels.INFO)
-				else
-					vim.notify("Function execution failed with exit code: " .. exit_code, vim.log.levels.ERROR)
-				end
-			end,
-			stdout_buffered = true,
-			stderr_buffered = true,
-		})
+		vim.cmd("vsplit")
+		vim.cmd("term " .. M.config.execution.run_command .. " " .. vim.fn.shellescape(temp_file))
 	end
 
 	-- If there's only one function, run it directly
@@ -408,43 +346,8 @@ function M.run_file()
 	if current_file and current_file ~= "" then
 		vim.notify("Running: " .. vim.fn.expand("%:t"), vim.log.levels.INFO)
 		-- Run python on the current file and capture output to notifications
-		vim.fn.jobstart(M.config.execution.run_command .. " " .. vim.fn.shellescape(current_file), {
-			on_stdout = function(_, data)
-				if data and #data > 1 then
-					local output = table.concat(data, "\n")
-					if output and output:match("%S") then
-						vim.notify(output, vim.log.levels.INFO, {
-							title = "Python Output",
-							timeout = M.config.execution.notification_timeout,
-						})
-					end
-				end
-			end,
-			on_stderr = function(_, data)
-				if data and #data > 1 then
-					local output = table.concat(data, "\n")
-					if output and output:match("%S") then
-						vim.notify(output, vim.log.levels.ERROR, {
-							title = "Python Error",
-							timeout = M.config.execution.notification_timeout,
-						})
-					end
-				end
-			end,
-			on_exit = function(_, exit_code)
-				if exit_code == 0 then
-					vim.notify("Program execution completed successfully", vim.log.levels.INFO, {
-						title = "Python Execution",
-					})
-				else
-					vim.notify("Program execution failed with exit code: " .. exit_code, vim.log.levels.ERROR, {
-						title = "Python Execution",
-					})
-				end
-			end,
-			stdout_buffered = true,
-			stderr_buffered = true,
-		})
+		vim.cmd("vsplit")
+		vim.cmd("term " .. M.config.execution.run_command .. " " .. vim.fn.shellescape(current_file))
 	else
 		vim.notify("No file is open", vim.log.levels.WARN)
 	end
