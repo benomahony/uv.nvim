@@ -2,9 +2,39 @@
 -- Author: Ben O'Mahony
 -- License: MIT
 
+---@class UVExecutionConfig
+---@field run_command string
+---@field notify_output boolean
+---@field notification_timeout integer
+---@field terminal '"split"'|'"vsplit"'|'"tab"'|string
+
+---@class UVKeymapsConfig
+---@field prefix string
+---@field commands boolean
+---@field run_file boolean
+---@field run_selection boolean
+---@field run_function boolean
+---@field venv boolean
+---@field init boolean
+---@field add boolean
+---@field remove boolean
+---@field sync boolean
+---@field sync_all boolean
+
+---@class UVConfig
+---@field auto_activate_venv boolean
+---@field notify_activate_venv boolean
+---@field auto_commands boolean
+---@field picker_integration boolean
+---@field keymaps UVKeymapsConfig|false
+---@field execution UVExecutionConfig
+
+---@class UVModule
+---@field config UVConfig
 local M = {}
 
 -- Default configuration
+---@type UVConfig
 M.config = {
 	-- Auto-activate virtual environments when found
 	auto_activate_venv = true,
@@ -36,7 +66,10 @@ M.config = {
 		-- Python run command template
 		run_command = "uv run python",
 
-		-- Show output in notifications
+		-- Where to open the terminal: "split" | "vsplit" | "tab"
+		terminal = "split",
+
+		-- Show output in notifications (used by M.run_command)
 		notify_output = true,
 
 		-- Notification timeout in ms
@@ -45,10 +78,13 @@ M.config = {
 }
 
 -- Command runner - runs shell commands and captures output
+---@param cmd string
 function M.run_command(cmd)
-	-- Run command in background and capture output
 	vim.fn.jobstart(cmd, {
 		on_exit = function(_, exit_code)
+			if not M.config.execution.notify_output then
+				return
+			end
 			if exit_code == 0 then
 				vim.notify("Command completed successfully: " .. cmd, vim.log.levels.INFO)
 			else
@@ -56,8 +92,10 @@ function M.run_command(cmd)
 			end
 		end,
 		on_stdout = function(_, data)
+			if not M.config.execution.notify_output then
+				return
+			end
 			if data and #data > 1 then
-				-- Only show meaningful output (not empty lines)
 				local output = table.concat(data, "\n")
 				if output and output:match("%S") then
 					vim.notify(output, vim.log.levels.INFO)
@@ -65,8 +103,10 @@ function M.run_command(cmd)
 			end
 		end,
 		on_stderr = function(_, data)
+			if not M.config.execution.notify_output then
+				return
+			end
 			if data and #data > 1 then
-				-- Show errors
 				local output = table.concat(data, "\n")
 				if output and output:match("%S") then
 					vim.notify(output, vim.log.levels.WARN)
@@ -79,9 +119,10 @@ function M.run_command(cmd)
 end
 
 -- Virtual environment activation
+---@param venv_path string
 function M.activate_venv(venv_path)
-	-- For Mac, run the source command to apply to the current shell
-	local command = "source " .. venv_path .. "/bin/activate"
+	-- For Mac, run the source command to apply to the current shell (kept for reference)
+	local _command = "source " .. venv_path .. "/bin/activate"
 	-- Set environment variables for the current Neovim instance
 	vim.env.VIRTUAL_ENV = venv_path
 	vim.env.PATH = venv_path .. "/bin:" .. vim.env.PATH
@@ -92,6 +133,7 @@ function M.activate_venv(venv_path)
 end
 
 -- Auto-activate the .venv if it exists at the project root
+---@return boolean
 function M.auto_activate_venv()
 	local venv_path = vim.fn.getcwd() .. "/.venv"
 	if vim.fn.isdirectory(venv_path) == 1 then
@@ -101,10 +143,25 @@ function M.auto_activate_venv()
 	return false
 end
 
+-- Internal: open a terminal according to execution.terminal (no helper exported)
+---@param cmd string
+local function open_term(cmd)
+	local where = M.config.execution.terminal or "vsplit"
+	if where == "split" then
+		vim.cmd("split")
+	elseif where == "tab" then
+		vim.cmd("tabnew")
+	else
+		vim.cmd("vsplit")
+	end
+	vim.cmd("term " .. cmd)
+end
+
 -- Function to create a temporary file with the necessary context and selected code
 function M.run_python_selection()
 	-- Get visual selection
-	local get_visual_selection = function()
+	---@return string
+	local function get_visual_selection()
 		local start_pos = vim.fn.getpos("'<")
 		local end_pos = vim.fn.getpos("'>")
 		local lines = vim.fn.getline(start_pos[2], end_pos[2])
@@ -127,7 +184,8 @@ function M.run_python_selection()
 	end
 
 	-- Get current buffer content to extract imports and global variables
-	local get_buffer_globals = function()
+	---@return string[], string[]
+	local function get_buffer_globals()
 		local lines = vim.api.nvim_buf_get_lines(0, 0, -1, false)
 		local imports = {}
 		local globals = {}
@@ -211,9 +269,9 @@ function M.run_python_selection()
 	end
 
 	-- Process the selection to determine what type of code it is
-	local is_function_def = selection:match("^%s*def%s+[%w_]+%s*%(")
-	local is_class_def = selection:match("^%s*class%s+[%w_]+")
-	local has_print = selection:match("print%s*%(")
+	local is_function_def = selection:match("^%s*def%s+[%w_]+%s*%(") ~= nil
+	local is_class_def = selection:match("^%s*class%s+[%w_]+") ~= nil
+	local has_print = selection:match("print%s*%(") ~= nil
 	local is_expression = not is_function_def
 		and not is_class_def
 		and not selection:match("=")
@@ -238,7 +296,7 @@ function M.run_python_selection()
 		if is_expression then
 			file:write("\n# Auto-added print for expression\n")
 			file:write('print(f"Expression result: {' .. selection:gsub("^%s+", ""):gsub("%s+$", "") .. '}")\n')
-			-- For function definitions without calls, we'll add a call
+		-- For function definitions without calls, we'll add a call
 		elseif is_function_def then
 			local function_name = selection:match("def%s+([%w_]+)%s*%(")
 			-- Check if the function is already called in the selection
@@ -250,7 +308,7 @@ function M.run_python_selection()
 				file:write("    if result is not None:\n")
 				file:write('        print(f"Return value: {result}")\n')
 			end
-			-- If there's no print statement in the code, add an output marker
+		-- If there's no print statement in the code, add an output marker
 		elseif not has_print and not selection:match("^%s*#") then
 			file:write("\n# Auto-added execution marker\n")
 			file:write('print("Code executed successfully.")\n')
@@ -261,8 +319,8 @@ function M.run_python_selection()
 
 	-- Run the temp file
 	vim.notify("Running selected code...", vim.log.levels.INFO)
-	vim.cmd("vsplit")
-	vim.cmd("term " .. M.config.execution.run_command .. " " .. vim.fn.shellescape(temp_file))
+	local cmd = M.config.execution.run_command .. " " .. vim.fn.shellescape(temp_file)
+	open_term(cmd)
 end
 
 -- Function to run a specific Python function
@@ -272,6 +330,7 @@ function M.run_python_function()
 	local buffer_content = table.concat(lines, "\n")
 
 	-- Find all function definitions
+	---@type string[]
 	local functions = {}
 	for line in buffer_content:gmatch("[^\r\n]+") do
 		local func_name = line:match("^def%s+([%w_]+)%s*%(")
@@ -286,14 +345,13 @@ function M.run_python_function()
 	end
 
 	-- Create temp file for function selection picker
-	local run_function = function(func_name)
-		-- Create a temporary file with a main block to call the function
+	---@param func_name string
+	local function run_function(func_name)
 		local temp_dir = vim.fn.expand("$HOME") .. "/.cache/nvim/uv_run"
 		vim.fn.mkdir(temp_dir, "p")
 		local temp_file = temp_dir .. "/run_function.py"
 		local current_file = vim.fn.expand("%:p")
 
-		-- Create a wrapper script that imports the current file and calls the function
 		local file = io.open(temp_file, "w")
 		if not file then
 			vim.notify("Failed to create temporary file", vim.log.levels.ERROR)
@@ -317,8 +375,8 @@ function M.run_python_function()
 
 		-- Run the temp file
 		vim.notify("Running function: " .. func_name, vim.log.levels.INFO)
-		vim.cmd("vsplit")
-		vim.cmd("term " .. M.config.execution.run_command .. " " .. vim.fn.shellescape(temp_file))
+		local cmd = M.config.execution.run_command .. " " .. vim.fn.shellescape(temp_file)
+		open_term(cmd)
 	end
 
 	-- If there's only one function, run it directly
@@ -345,9 +403,8 @@ function M.run_file()
 	local current_file = vim.fn.expand("%:p")
 	if current_file and current_file ~= "" then
 		vim.notify("Running: " .. vim.fn.expand("%:t"), vim.log.levels.INFO)
-		-- Run python on the current file and capture output to notifications
-		vim.cmd("vsplit")
-		vim.cmd("term " .. M.config.execution.run_command .. " " .. vim.fn.shellescape(current_file))
+		local cmd = M.config.execution.run_command .. " " .. vim.fn.shellescape(current_file)
+		open_term(cmd)
 	else
 		vim.notify("No file is open", vim.log.levels.WARN)
 	end
@@ -355,9 +412,8 @@ end
 
 -- Set up command pickers for integration with UI plugins
 function M.setup_pickers()
-	-- Check if Snacks is available
+	-- Snacks
 	if _G.Snacks and _G.Snacks.picker then
-		-- Register UV command source
 		Snacks.picker.sources.uv_commands = {
 			finder = function()
 				return {
@@ -384,26 +440,22 @@ function M.setup_pickers()
 						M.run_file()
 						return
 					elseif item.is_run_selection then
-						-- Check if there's a visual selection
 						local mode = vim.fn.mode()
-
 						if mode == "v" or mode == "V" or mode == "" then
-							vim.cmd("normal! \27") -- Exit visual mode
+							vim.cmd("normal! \27")
 							vim.defer_fn(function()
 								M.run_python_selection()
 							end, 100)
 						else
-							-- If not in visual mode, prompt the user to select text
 							vim.notify(
 								"Please select text first. Enter visual mode (v) and select code to run.",
 								vim.log.levels.INFO
 							)
-							-- After notification, we'll set up a one-time autocmd to catch when visual mode is exited
 							vim.api.nvim_create_autocmd("ModeChanged", {
-								pattern = "[vV\x16]*:n", -- When changing from any visual mode to normal mode
-								callback = function(ev)
+								pattern = "[vV\x16]*:n",
+								callback = function(_)
 									M.run_python_selection()
-									return true -- Delete the autocmd after it's been triggered
+									return true
 								end,
 								once = true,
 							})
@@ -415,7 +467,6 @@ function M.setup_pickers()
 					end
 
 					local cmd = item.text
-					-- Check if command needs input
 					if cmd:match("%[(.-)%]") then
 						local param_name = cmd:match("%[(.-)%]")
 						vim.ui.input({ prompt = "Enter " .. param_name .. ": " }, function(input)
@@ -423,23 +474,19 @@ function M.setup_pickers()
 								vim.notify("Cancelled", vim.log.levels.INFO)
 								return
 							end
-							-- Replace the placeholder with actual input
 							local actual_cmd = cmd:gsub("%[" .. param_name .. "%]", input)
 							M.run_command(actual_cmd)
 						end)
 					else
-						-- Run the command directly
 						M.run_command(cmd)
 					end
 				end
 			end,
 		}
 
-		-- Register UV venv source
 		Snacks.picker.sources.uv_venv = {
 			finder = function()
 				local venvs = {}
-				-- Check for .venv directory (uv's default)
 				if vim.fn.isdirectory(".venv") == 1 then
 					table.insert(venvs, {
 						text = ".venv",
@@ -476,17 +523,16 @@ function M.setup_pickers()
 		}
 	end
 
-	-- Check if Telescope is available
+	-- Telescope
 	local has_telescope, telescope = pcall(require, "telescope")
-	if has_telescope then
+	if has_telescope and telescope then
 		local pickers = require("telescope.pickers")
 		local finders = require("telescope.finders")
 		local sorters = require("telescope.sorters")
 		local actions = require("telescope.actions")
 		local action_state = require("telescope.actions.state")
 
-		-- UV Commands picker for Telescope
-		M.pick_uv_commands = function()
+		function M.pick_uv_commands()
 			local items = {
 				{ text = "Run current file", is_run_current = true },
 				{ text = "Run selection", is_run_selection = true },
@@ -572,8 +618,7 @@ function M.setup_pickers()
 				:find()
 		end
 
-		-- UV venv picker for Telescope
-		M.pick_uv_venv = function()
+		function M.pick_uv_venv()
 			local items = {}
 			if vim.fn.isdirectory(".venv") == 1 then
 				table.insert(items, {
@@ -625,32 +670,26 @@ end
 
 -- Set up user commands
 function M.setup_commands()
-	-- Set up UV commands
 	vim.api.nvim_create_user_command("UVInit", function()
 		M.run_command("uv init")
 	end, {})
 
-	-- Command to run selected code
 	vim.api.nvim_create_user_command("UVRunSelection", function()
 		M.run_python_selection()
 	end, { range = true })
 
-	-- Command to run a specific function
 	vim.api.nvim_create_user_command("UVRunFunction", function()
 		M.run_python_function()
 	end, {})
 
-	-- Command to run the current file
 	vim.api.nvim_create_user_command("UVRunFile", function()
 		M.run_file()
 	end, {})
 
-	-- Command to add a package
 	vim.api.nvim_create_user_command("UVAddPackage", function(opts)
 		M.run_command("uv add " .. opts.args)
 	end, { nargs = 1 })
 
-	-- Command to remove a package
 	vim.api.nvim_create_user_command("UVRemovePackage", function(opts)
 		M.run_command("uv remove " .. opts.args)
 	end, { nargs = 1 })
@@ -659,6 +698,10 @@ end
 -- Set up keymaps
 function M.setup_keymaps()
 	local keymaps = M.config.keymaps
+	if not keymaps then
+		return
+	end
+
 	local prefix = keymaps.prefix or "<leader>x"
 
 	-- Main UV command menu
@@ -797,11 +840,9 @@ end
 -- Set up auto commands
 function M.setup_autocommands()
 	if M.config.auto_commands then
-		-- Auto-activate .venv if it exists
 		if M.config.auto_activate_venv then
 			M.auto_activate_venv()
 
-			-- Also set up auto-command to check when entering a directory
 			vim.api.nvim_create_autocmd({ "DirChanged" }, {
 				pattern = { "global" },
 				callback = function()
@@ -813,6 +854,7 @@ function M.setup_autocommands()
 end
 
 -- Main setup function
+---@param opts UVConfig|nil
 function M.setup(opts)
 	-- Merge user configuration with defaults
 	M.config = vim.tbl_deep_extend("force", M.config, opts or {})
