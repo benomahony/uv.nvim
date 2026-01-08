@@ -22,14 +22,18 @@ Using [lazy.nvim](https://github.com/folke/lazy.nvim):
 ```lua
 return {
   "benomahony/uv.nvim",
-  -- ft = { "python" },  -- Optional: lazy load on python files
   dependencies = {
-    "linux-cultist/venv-selector.nvim",
-    "neovim/nvim-lspconfig",
     "nvim-telescope/telescope.nvim",
+    "neovim/nvim-lspconfig",
+    {
+      "linux-cultist/venv-selector.nvim",
+      ft = "python",
+      opts = {},
+    },
   },
   opts = {
     picker_integration = true,
+    notify_activate_venv = true,
   },
 }
 ```
@@ -39,14 +43,22 @@ Using [packer.nvim](https://github.com/wbthomason/packer.nvim):
 ```lua
 use {
   'benomahony/uv.nvim',
-  -- ft = { "python" },  -- Optional: lazy load on python files
   requires = {
-    "linux-cultist/venv-selector.nvim",
-    "neovim/nvim-lspconfig",
     "nvim-telescope/telescope.nvim",
+    "neovim/nvim-lspconfig",
+    {
+      "linux-cultist/venv-selector.nvim",
+      ft = "python",
+      config = function()
+        require('venv-selector').setup()
+      end,
+    },
   },
   config = function()
-    require('uv').setup()
+    require('uv').setup({
+      picker_integration = true,
+      notify_activate_venv = true,
+    })
   end
 }
 ```
