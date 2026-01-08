@@ -25,9 +25,8 @@ return {
   -- ft = { "python" },  -- Optional: lazy load on python files
   dependencies = {
     "linux-cultist/venv-selector.nvim",
-    -- Optional picker (choose one):
-    -- "folke/snacks.nvim",
-    -- "nvim-telescope/telescope.nvim",
+    "neovim/nvim-lspconfig",
+    "nvim-telescope/telescope.nvim",
   },
   opts = {
     picker_integration = true,
@@ -43,9 +42,8 @@ use {
   -- ft = { "python" },  -- Optional: lazy load on python files
   requires = {
     "linux-cultist/venv-selector.nvim",
-    -- Optional picker (choose one):
-    -- "folke/snacks.nvim",
-    -- "nvim-telescope/telescope.nvim",
+    "neovim/nvim-lspconfig",
+    "nvim-telescope/telescope.nvim",
   },
   config = function()
     require('uv').setup()
@@ -60,7 +58,8 @@ You can customize any part of the configuration to fit your workflow.
 - Neovim 0.7.0 or later
 - [uv](https://github.com/astral-sh/uv) installed on your system
 - [venv-selector.nvim](https://github.com/linux-cultist/venv-selector.nvim) for unified venv management
-- For UI picker integration (optional), a compatible UI picker (like [Snacks.nvim](https://github.com/folke/snacks.nvim) or [Telescope.nvim](https://github.com/nvim-telescope/telescope.nvim))
+- [nvim-lspconfig](https://github.com/neovim/nvim-lspconfig) for LSP integration
+- [telescope.nvim](https://github.com/nvim-telescope/telescope.nvim) for UI picker
 
 ## Usage
 
