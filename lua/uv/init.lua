@@ -121,23 +121,46 @@ end
 -- Virtual environment activation
 ---@param venv_path string
 function M.activate_venv(venv_path)
-	-- For Mac, run the source command to apply to the current shell (kept for reference)
-	local _command = "source " .. venv_path .. "/bin/activate"
-	-- Set environment variables for the current Neovim instance
 	vim.env.VIRTUAL_ENV = venv_path
 	vim.env.PATH = venv_path .. "/bin:" .. vim.env.PATH
-	-- Notify user
+
+	local has_venv_selector, venv_module = pcall(require, "venv-selector.venv")
+	if has_venv_selector and venv_module.activate then
+		venv_module.activate(venv_path .. "/bin/python", "activate_from_path", false)
+	end
+
 	if M.config.notify_activate_venv then
 		vim.notify("Activated virtual environment: " .. venv_path, vim.log.levels.INFO)
 	end
 end
 
--- Auto-activate the .venv if it exists at the project root
+-- Find all .venv* directories in the current working directory
+---@return table[]
+local function find_venvs()
+	local cwd = vim.fn.getcwd()
+	local venvs = {}
+	local patterns = { ".venv", ".venv-*", "venv", "venv-*" }
+
+	for _, pattern in ipairs(patterns) do
+		local matches = vim.fn.glob(cwd .. "/" .. pattern, false, true)
+		for _, path in ipairs(matches) do
+			if vim.fn.isdirectory(path) == 1 and vim.fn.executable(path .. "/bin/python") == 1 then
+				local name = vim.fn.fnamemodify(path, ":t")
+				local is_current = vim.env.VIRTUAL_ENV and vim.env.VIRTUAL_ENV == path
+				table.insert(venvs, { text = name, path = path, is_current = is_current })
+			end
+		end
+	end
+
+	return venvs
+end
+
+-- Auto-activate the first .venv* if it exists at the project root
 ---@return boolean
 function M.auto_activate_venv()
-	local venv_path = vim.fn.getcwd() .. "/.venv"
-	if vim.fn.isdirectory(venv_path) == 1 then
-		M.activate_venv(venv_path)
+	local venvs = find_venvs()
+	if #venvs > 0 then
+		M.activate_venv(venvs[1].path)
 		return true
 	end
 	return false
@@ -486,14 +509,7 @@ function M.setup_pickers()
 
 		Snacks.picker.sources.uv_venv = {
 			finder = function()
-				local venvs = {}
-				if vim.fn.isdirectory(".venv") == 1 then
-					table.insert(venvs, {
-						text = ".venv",
-						path = vim.fn.getcwd() .. "/.venv",
-						is_current = vim.env.VIRTUAL_ENV and vim.env.VIRTUAL_ENV:match(".venv$") ~= nil,
-					})
-				end
+				local venvs = find_venvs()
 				if #venvs == 0 then
 					table.insert(venvs, {
 						text = "Create new virtual environment (uv venv)",
@@ -505,9 +521,10 @@ function M.setup_pickers()
 			format = function(item)
 				if item.is_create then
 					return { { "+ " .. item.text } }
+				elseif item.is_current then
+					return { { "● " .. item.text .. " (Active)" } }
 				else
-					local icon = item.is_current and "● " or "○ "
-					return { { icon .. item.text .. " (Activate)" } }
+					return { { "○ " .. item.text } }
 				end
 			end,
 			confirm = function(picker, item)
@@ -619,14 +636,7 @@ function M.setup_pickers()
 		end
 
 		function M.pick_uv_venv()
-			local items = {}
-			if vim.fn.isdirectory(".venv") == 1 then
-				table.insert(items, {
-					text = ".venv",
-					path = vim.fn.getcwd() .. "/.venv",
-					is_current = vim.env.VIRTUAL_ENV and vim.env.VIRTUAL_ENV:match(".venv$") ~= nil,
-				})
-			end
+			local items = find_venvs()
 			if #items == 0 then
 				table.insert(items, { text = "Create new virtual environment (uv venv)", is_create = true })
 			end
@@ -637,8 +647,14 @@ function M.setup_pickers()
 					finder = finders.new_table({
 						results = items,
 						entry_maker = function(entry)
-							local display = entry.is_create and "+ " .. entry.text
-								or ((entry.is_current and "● " or "○ ") .. entry.text .. " (Activate)")
+							local display
+							if entry.is_create then
+								display = "+ " .. entry.text
+							elseif entry.is_current then
+								display = "● " .. entry.text .. " (Active)"
+							else
+								display = "○ " .. entry.text
+							end
 							return {
 								value = entry,
 								display = display,
