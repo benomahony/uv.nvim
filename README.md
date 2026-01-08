@@ -22,14 +22,13 @@ Using [lazy.nvim](https://github.com/folke/lazy.nvim):
 ```lua
 return {
   "benomahony/uv.nvim",
-  -- Optional filetype to lazy load when you open a python file
-  -- ft = { python }
-  -- Optional dependency, but recommended:
-  -- dependencies = {
-  --   "folke/snacks.nvim"
-  -- or
-  --   "nvim-telescope/telescope.nvim"
-  -- },
+  -- ft = { "python" },  -- Optional: lazy load on python files
+  dependencies = {
+    "linux-cultist/venv-selector.nvim",
+    -- Optional picker (choose one):
+    -- "folke/snacks.nvim",
+    -- "nvim-telescope/telescope.nvim",
+  },
   opts = {
     picker_integration = true,
   },
@@ -41,14 +40,13 @@ Using [packer.nvim](https://github.com/wbthomason/packer.nvim):
 ```lua
 use {
   'benomahony/uv.nvim',
-  -- Optional filetype to lazy load when you open a python file
-  -- ft = { python }
-  -- Optional dependency, but recommended:
-  -- requires = {
-  --   "folke/snacks.nvim"
-  -- or
-  --   "nvim-telescope/telescope.nvim"
-  -- },
+  -- ft = { "python" },  -- Optional: lazy load on python files
+  requires = {
+    "linux-cultist/venv-selector.nvim",
+    -- Optional picker (choose one):
+    -- "folke/snacks.nvim",
+    -- "nvim-telescope/telescope.nvim",
+  },
   config = function()
     require('uv').setup()
   end
@@ -61,7 +59,8 @@ You can customize any part of the configuration to fit your workflow.
 
 - Neovim 0.7.0 or later
 - [uv](https://github.com/astral-sh/uv) installed on your system
-- For UI picker integration, a compatible UI picker (like [Snacks.nvim](https://github.com/folke/snacks.nvim) or [Telescope.nvim](https://github.com/nvim-telescope/telescope.nvim))
+- [venv-selector.nvim](https://github.com/linux-cultist/venv-selector.nvim) for unified venv management
+- For UI picker integration (optional), a compatible UI picker (like [Snacks.nvim](https://github.com/folke/snacks.nvim) or [Telescope.nvim](https://github.com/nvim-telescope/telescope.nvim))
 
 ## Usage
 
