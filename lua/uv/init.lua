@@ -124,9 +124,9 @@ function M.activate_venv(venv_path)
 	vim.env.VIRTUAL_ENV = venv_path
 	vim.env.PATH = venv_path .. "/bin:" .. vim.env.PATH
 
-	local has_venv_selector, venv_selector = pcall(require, "venv-selector")
-	if has_venv_selector and venv_selector.activate_from_path then
-		venv_selector.activate_from_path(venv_path .. "/bin/python")
+	local has_venv_selector, venv_module = pcall(require, "venv-selector.venv")
+	if has_venv_selector and venv_module.activate then
+		venv_module.activate(venv_path .. "/bin/python", "uv", false)
 	end
 
 	if M.config.notify_activate_venv then
