@@ -33,6 +33,40 @@
 ---@field config UVConfig
 local M = {}
 
+-- Check if we should use --active flag (when a non-default venv is active)
+---@return boolean
+local function should_use_active_venv()
+	local venv = vim.env.VIRTUAL_ENV
+	if not venv then
+		return false
+	end
+	local cwd = vim.fn.getcwd()
+	local default_venv = cwd .. "/.venv"
+	return venv ~= default_venv
+end
+
+-- Add --active flag to uv project commands if a custom venv is active
+---@param cmd string
+---@return string
+local function maybe_add_active_flag(cmd)
+	if not should_use_active_venv() then
+		return cmd
+	end
+	-- Match uv project commands that support --active
+	local patterns = {
+		"^(uv%s+add)",
+		"^(uv%s+remove)",
+		"^(uv%s+sync)",
+		"^(uv%s+run)",
+	}
+	for _, pattern in ipairs(patterns) do
+		if cmd:match(pattern) then
+			return cmd:gsub(pattern, "%1 --active")
+		end
+	end
+	return cmd
+end
+
 -- Default configuration
 ---@type UVConfig
 M.config = {
@@ -45,6 +79,12 @@ M.config = {
 
 	-- Integration with picker (like Telescope or other UI components)
 	picker_integration = true,
+
+	-- Hide terminal buffer from buffer list
+	hide_terminal_buffer = false,
+
+	-- Reuse existing terminal window
+	reuse_terminal = false,
 
 	-- Keymaps to register (set to false to disable)
 	keymaps = {
@@ -74,21 +114,36 @@ M.config = {
 
 		-- Notification timeout in ms
 		notification_timeout = 10000,
+
+		-- Hide result buffer from buffer list
+		hide_result_buffer = false,
+
+		-- Reuse existing result split buffer
+		reuse_result_split_buffer = false,
 	},
 }
 
--- Command runner - runs shell commands and captures output
+local uv_result_win = nil
+
 ---@param cmd string
 function M.run_command(cmd)
+	local original_cmd = cmd
+	cmd = maybe_add_active_flag(cmd)
 	vim.fn.jobstart(cmd, {
 		on_exit = function(_, exit_code)
-			if not M.config.execution.notify_output then
-				return
-			end
 			if exit_code == 0 then
-				vim.notify("Command completed successfully: " .. cmd, vim.log.levels.INFO)
+				if original_cmd:match("^uv%s+add") or original_cmd:match("^uv%s+remove") or original_cmd:match("^uv%s+sync") then
+					vim.schedule(function()
+						vim.cmd("LspRestart")
+					end)
+				end
+				if M.config.execution.notify_output then
+					vim.notify("Command completed successfully: " .. cmd, vim.log.levels.INFO)
+				end
 			else
-				vim.notify("Command failed: " .. cmd, vim.log.levels.ERROR)
+				if M.config.execution.notify_output then
+					vim.notify("Command failed: " .. cmd, vim.log.levels.ERROR)
+				end
 			end
 		end,
 		on_stdout = function(_, data)
@@ -118,43 +173,222 @@ function M.run_command(cmd)
 	})
 end
 
--- Virtual environment activation
+---@param venv_path string
+local function update_pyproject_toml(venv_path)
+	local cwd = vim.fn.getcwd()
+	local pyproject_path = cwd .. "/pyproject.toml"
+
+	if vim.fn.filereadable(pyproject_path) ~= 1 then
+		return
+	end
+
+	local python_bin = venv_path .. "/bin/python"
+	local version_output = vim.fn.system(python_bin .. " --version 2>&1")
+	local major, minor = version_output:match("Python (%d+)%.(%d+)")
+	if not major or not minor then
+		return
+	end
+
+	local next_minor = tonumber(minor) + 1
+	local requires_python = ">=" .. major .. "." .. minor .. ",<" .. major .. "." .. next_minor
+
+	local lines = {}
+	for line in io.lines(pyproject_path) do
+		table.insert(lines, line)
+	end
+
+	local new_lines = {}
+	local in_dependencies = false
+
+	for _, line in ipairs(lines) do
+		if line:match("^requires%-python%s*=") then
+			table.insert(new_lines, 'requires-python = "' .. requires_python .. '"')
+		elseif line:match("^dependencies%s*=%s*%[") then
+			in_dependencies = true
+			table.insert(new_lines, line)
+		elseif in_dependencies then
+			if line:match("^%s*%]") then
+				in_dependencies = false
+				table.insert(new_lines, line)
+			else
+				local indent, pkg_name = line:match('^(%s*)"([%w_%-]+)')
+				if pkg_name then
+					table.insert(new_lines, indent .. '"' .. pkg_name .. '",')
+				else
+					table.insert(new_lines, line)
+				end
+			end
+		else
+			table.insert(new_lines, line)
+		end
+	end
+
+	local file = io.open(pyproject_path, "w")
+	if file then
+		file:write(table.concat(new_lines, "\n") .. "\n")
+		file:close()
+	end
+
+	local python_version_path = cwd .. "/.python-version"
+	local pv_file = io.open(python_version_path, "w")
+	if pv_file then
+		pv_file:write(major .. "." .. minor .. "\n")
+		pv_file:close()
+	end
+
+	vim.fn.jobstart("uv lock --python " .. major .. "." .. minor, {
+		cwd = cwd,
+		on_exit = function(_, lock_code)
+			if lock_code ~= 0 then
+				return
+			end
+			vim.fn.jobstart("uv sync --active", {
+				cwd = cwd,
+				on_exit = function(_, sync_code)
+					if sync_code ~= 0 then
+						return
+					end
+					vim.schedule(function()
+						local pip_json =
+							vim.fn.system("uv pip list --python " .. python_bin .. " --format=json 2>/dev/null")
+						local installed = {}
+						for name, version in pip_json:gmatch('"name":"([^"]+)","version":"([^"]+)"') do
+							installed[name:lower()] = version
+						end
+
+						local final_lines = {}
+						for l in io.lines(pyproject_path) do
+							table.insert(final_lines, l)
+						end
+
+						local result_lines = {}
+						local in_deps = false
+
+						for _, l in ipairs(final_lines) do
+							if l:match("^dependencies%s*=%s*%[") then
+								in_deps = true
+								table.insert(result_lines, l)
+							elseif in_deps then
+								if l:match("^%s*%]") then
+									in_deps = false
+									table.insert(result_lines, l)
+								else
+									local indent, pkg_name = l:match('^(%s*)"([%w_%-]+)')
+									if pkg_name then
+										local v = installed[pkg_name:lower()]
+										if v then
+											table.insert(result_lines, indent .. '"' .. pkg_name .. ">=" .. v .. '",')
+										else
+											table.insert(result_lines, l)
+										end
+									else
+										table.insert(result_lines, l)
+									end
+								end
+							else
+								table.insert(result_lines, l)
+							end
+						end
+
+						local f = io.open(pyproject_path, "w")
+						if f then
+							f:write(table.concat(result_lines, "\n") .. "\n")
+							f:close()
+						end
+						vim.cmd("LspRestart")
+					end)
+				end,
+			})
+		end,
+	})
+end
+
 ---@param venv_path string
 function M.activate_venv(venv_path)
-	-- For Mac, run the source command to apply to the current shell (kept for reference)
-	local _command = "source " .. venv_path .. "/bin/activate"
-	-- Set environment variables for the current Neovim instance
 	vim.env.VIRTUAL_ENV = venv_path
 	vim.env.PATH = venv_path .. "/bin:" .. vim.env.PATH
-	-- Notify user
+
+	local has_venv_selector, venv_module = pcall(require, "venv-selector.venv")
+	if has_venv_selector and venv_module.activate then
+		venv_module.activate(venv_path .. "/bin/python", "activate_from_path", false)
+	end
+
+	update_pyproject_toml(venv_path)
+
 	if M.config.notify_activate_venv then
 		vim.notify("Activated virtual environment: " .. venv_path, vim.log.levels.INFO)
 	end
 end
 
--- Auto-activate the .venv if it exists at the project root
+-- Find all .venv* directories in the current working directory
+---@return table[]
+local function find_venvs()
+	local cwd = vim.fn.getcwd()
+	local venvs = {}
+	local patterns = { ".venv", ".venv-*", "venv", "venv-*" }
+
+	for _, pattern in ipairs(patterns) do
+		local matches = vim.fn.glob(cwd .. "/" .. pattern, false, true)
+		for _, path in ipairs(matches) do
+			if vim.fn.isdirectory(path) == 1 and vim.fn.executable(path .. "/bin/python") == 1 then
+				local name = vim.fn.fnamemodify(path, ":t")
+				local is_current = vim.env.VIRTUAL_ENV and vim.env.VIRTUAL_ENV == path
+				table.insert(venvs, { text = name, path = path, is_current = is_current })
+			end
+		end
+	end
+
+	return venvs
+end
+
+-- Auto-activate the first .venv* if it exists at the project root
 ---@return boolean
 function M.auto_activate_venv()
-	local venv_path = vim.fn.getcwd() .. "/.venv"
-	if vim.fn.isdirectory(venv_path) == 1 then
-		M.activate_venv(venv_path)
+	local venvs = find_venvs()
+	if #venvs > 0 then
+		M.activate_venv(venvs[1].path)
 		return true
 	end
 	return false
 end
 
--- Internal: open a terminal according to execution.terminal (no helper exported)
 ---@param cmd string
 local function open_term(cmd)
-	local where = M.config.execution.terminal or "vsplit"
-	if where == "split" then
-		vim.cmd("split")
-	elseif where == "tab" then
-		vim.cmd("tabnew")
+	cmd = maybe_add_active_flag(cmd)
+	local reuse = M.config.execution.reuse_result_split_buffer
+
+	if reuse and uv_result_win and vim.api.nvim_win_is_valid(uv_result_win) then
+		vim.api.nvim_set_current_win(uv_result_win)
+		local current_buf = vim.api.nvim_win_get_buf(uv_result_win)
+		if current_buf and vim.api.nvim_buf_is_valid(current_buf) then
+			local job_id = vim.b[current_buf].terminal_job_id
+			if job_id then
+				pcall(vim.fn.jobstop, job_id)
+			end
+		end
+		vim.cmd("enew")
+		if vim.api.nvim_buf_is_valid(current_buf) then
+			vim.api.nvim_buf_delete(current_buf, { force = true })
+		end
 	else
-		vim.cmd("vsplit")
+		local where = M.config.execution.terminal or "vsplit"
+		if where == "split" then
+			vim.cmd("split")
+		elseif where == "tab" then
+			vim.cmd("tabnew")
+		else
+			vim.cmd("vsplit")
+		end
+		uv_result_win = vim.api.nvim_get_current_win()
 	end
+
 	vim.cmd("term " .. cmd)
+	local buf = vim.api.nvim_get_current_buf()
+	vim.schedule(function()
+		if vim.api.nvim_buf_is_valid(buf) then
+			vim.bo[buf].buflisted = not M.config.execution.hide_result_buffer
+		end
+	end)
 end
 
 -- Function to create a temporary file with the necessary context and selected code
@@ -486,14 +720,7 @@ function M.setup_pickers()
 
 		Snacks.picker.sources.uv_venv = {
 			finder = function()
-				local venvs = {}
-				if vim.fn.isdirectory(".venv") == 1 then
-					table.insert(venvs, {
-						text = ".venv",
-						path = vim.fn.getcwd() .. "/.venv",
-						is_current = vim.env.VIRTUAL_ENV and vim.env.VIRTUAL_ENV:match(".venv$") ~= nil,
-					})
-				end
+				local venvs = find_venvs()
 				if #venvs == 0 then
 					table.insert(venvs, {
 						text = "Create new virtual environment (uv venv)",
@@ -505,9 +732,10 @@ function M.setup_pickers()
 			format = function(item)
 				if item.is_create then
 					return { { "+ " .. item.text } }
+				elseif item.is_current then
+					return { { "● " .. item.text .. " (Active)" } }
 				else
-					local icon = item.is_current and "● " or "○ "
-					return { { icon .. item.text .. " (Activate)" } }
+					return { { "○ " .. item.text } }
 				end
 			end,
 			confirm = function(picker, item)
@@ -619,14 +847,7 @@ function M.setup_pickers()
 		end
 
 		function M.pick_uv_venv()
-			local items = {}
-			if vim.fn.isdirectory(".venv") == 1 then
-				table.insert(items, {
-					text = ".venv",
-					path = vim.fn.getcwd() .. "/.venv",
-					is_current = vim.env.VIRTUAL_ENV and vim.env.VIRTUAL_ENV:match(".venv$") ~= nil,
-				})
-			end
+			local items = find_venvs()
 			if #items == 0 then
 				table.insert(items, { text = "Create new virtual environment (uv venv)", is_create = true })
 			end
@@ -637,8 +858,14 @@ function M.setup_pickers()
 					finder = finders.new_table({
 						results = items,
 						entry_maker = function(entry)
-							local display = entry.is_create and "+ " .. entry.text
-								or ((entry.is_current and "● " or "○ ") .. entry.text .. " (Activate)")
+							local display
+							if entry.is_create then
+								display = "+ " .. entry.text
+							elseif entry.is_current then
+								display = "● " .. entry.text .. " (Active)"
+							else
+								display = "○ " .. entry.text
+							end
 							return {
 								value = entry,
 								display = display,

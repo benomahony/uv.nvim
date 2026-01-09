@@ -10,6 +10,9 @@ A Neovim plugin providing integration with the [uv](https://github.com/astral-sh
 - Manage Python packages with uv commands
 - Automatically activate virtual environments
 - Integration with UI pickers (like Telescope and Snacks.nvim)
+- Multiple venv pattern support (.venv, .venv-*, venv, venv-*)
+- Auto-sync pyproject.toml and .python-version when switching venv
+- Auto LSP restart after package changes
 
 ## Demo
 
@@ -22,16 +25,18 @@ Using [lazy.nvim](https://github.com/folke/lazy.nvim):
 ```lua
 return {
   "benomahony/uv.nvim",
-  -- Optional filetype to lazy load when you open a python file
-  -- ft = { python }
-  -- Optional dependency, but recommended:
-  -- dependencies = {
-  --   "folke/snacks.nvim"
-  -- or
-  --   "nvim-telescope/telescope.nvim"
-  -- },
+  dependencies = {
+    "nvim-telescope/telescope.nvim",
+    "neovim/nvim-lspconfig",
+    {
+      "linux-cultist/venv-selector.nvim",
+      ft = "python",
+      opts = {},
+    },
+  },
   opts = {
     picker_integration = true,
+    notify_activate_venv = true,
   },
 }
 ```
@@ -41,16 +46,22 @@ Using [packer.nvim](https://github.com/wbthomason/packer.nvim):
 ```lua
 use {
   'benomahony/uv.nvim',
-  -- Optional filetype to lazy load when you open a python file
-  -- ft = { python }
-  -- Optional dependency, but recommended:
-  -- requires = {
-  --   "folke/snacks.nvim"
-  -- or
-  --   "nvim-telescope/telescope.nvim"
-  -- },
+  requires = {
+    "nvim-telescope/telescope.nvim",
+    "neovim/nvim-lspconfig",
+    {
+      "linux-cultist/venv-selector.nvim",
+      ft = "python",
+      config = function()
+        require('venv-selector').setup()
+      end,
+    },
+  },
   config = function()
-    require('uv').setup()
+    require('uv').setup({
+      picker_integration = true,
+      notify_activate_venv = true,
+    })
   end
 }
 ```
@@ -61,7 +72,9 @@ You can customize any part of the configuration to fit your workflow.
 
 - Neovim 0.7.0 or later
 - [uv](https://github.com/astral-sh/uv) installed on your system
-- For UI picker integration, a compatible UI picker (like [Snacks.nvim](https://github.com/folke/snacks.nvim) or [Telescope.nvim](https://github.com/nvim-telescope/telescope.nvim))
+- [venv-selector.nvim](https://github.com/linux-cultist/venv-selector.nvim) for unified venv management
+- [nvim-lspconfig](https://github.com/neovim/nvim-lspconfig) for LSP integration
+- [telescope.nvim](https://github.com/nvim-telescope/telescope.nvim) for UI picker
 
 ## Usage
 
@@ -194,8 +207,10 @@ require('uv').setup({
 ## Troubleshooting
 
 - **Command execution errors**: Make sure uv is installed and in your PATH.
-- **Virtual environment not activating**: Check if the `.venv` directory exists in your project root.
+- **Virtual environment not activating**: Check if the `.venv` or `.venv-*` directory exists in your project root.
 - **Output not showing**: Check notification settings in your Neovim configuration.
+- **Packages not recognized after install**: LSP should auto-restart. If not, run `:LspRestart` manually.
+- **Wrong Python version used**: When switching venv, pyproject.toml and .python-version are auto-updated to match.
 
 ## Contributing
 
@@ -241,11 +256,20 @@ require('uv').setup({
     -- Python run command template
     run_command = "uv run python",
 
+    -- Where to open the terminal: "split" | "vsplit" | "tab"
+    terminal = "split",
+
     -- Show output in notifications
     notify_output = true,
 
     -- Notification timeout in ms
     notification_timeout = 10000,
+
+    -- Hide result buffer from buffer list (tabline)
+    hide_result_buffer = false,
+
+    -- Reuse existing result split buffer instead of creating new one
+    reuse_result_split_buffer = false,
   },
 })
 ```
