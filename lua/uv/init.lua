@@ -33,6 +33,40 @@
 ---@field config UVConfig
 local M = {}
 
+-- Check if we should use --active flag (when a non-default venv is active)
+---@return boolean
+local function should_use_active_venv()
+	local venv = vim.env.VIRTUAL_ENV
+	if not venv then
+		return false
+	end
+	local cwd = vim.fn.getcwd()
+	local default_venv = cwd .. "/.venv"
+	return venv ~= default_venv
+end
+
+-- Add --active flag to uv project commands if a custom venv is active
+---@param cmd string
+---@return string
+local function maybe_add_active_flag(cmd)
+	if not should_use_active_venv() then
+		return cmd
+	end
+	-- Match uv project commands that support --active
+	local patterns = {
+		"^(uv%s+add)",
+		"^(uv%s+remove)",
+		"^(uv%s+sync)",
+		"^(uv%s+run)",
+	}
+	for _, pattern in ipairs(patterns) do
+		if cmd:match(pattern) then
+			return cmd:gsub(pattern, "%1 --active")
+		end
+	end
+	return cmd
+end
+
 -- Default configuration
 ---@type UVConfig
 M.config = {
@@ -77,18 +111,25 @@ M.config = {
 	},
 }
 
--- Command runner - runs shell commands and captures output
 ---@param cmd string
 function M.run_command(cmd)
+	local original_cmd = cmd
+	cmd = maybe_add_active_flag(cmd)
 	vim.fn.jobstart(cmd, {
 		on_exit = function(_, exit_code)
-			if not M.config.execution.notify_output then
-				return
-			end
 			if exit_code == 0 then
-				vim.notify("Command completed successfully: " .. cmd, vim.log.levels.INFO)
+				if original_cmd:match("^uv%s+add") or original_cmd:match("^uv%s+remove") or original_cmd:match("^uv%s+sync") then
+					vim.schedule(function()
+						vim.cmd("LspRestart")
+					end)
+				end
+				if M.config.execution.notify_output then
+					vim.notify("Command completed successfully: " .. cmd, vim.log.levels.INFO)
+				end
 			else
-				vim.notify("Command failed: " .. cmd, vim.log.levels.ERROR)
+				if M.config.execution.notify_output then
+					vim.notify("Command failed: " .. cmd, vim.log.levels.ERROR)
+				end
 			end
 		end,
 		on_stdout = function(_, data)
@@ -166,9 +207,9 @@ function M.auto_activate_venv()
 	return false
 end
 
--- Internal: open a terminal according to execution.terminal (no helper exported)
 ---@param cmd string
 local function open_term(cmd)
+	cmd = maybe_add_active_flag(cmd)
 	local where = M.config.execution.terminal or "vsplit"
 	if where == "split" then
 		vim.cmd("split")
