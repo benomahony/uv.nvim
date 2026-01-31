@@ -118,6 +118,58 @@ function M.run_command(cmd)
 	})
 end
 
+-- Check if auto-activate is enabled (checks buffer-local, then global, then config)
+-- This allows granular per-directory/buffer control similar to LazyVim's autoformat
+---@return boolean
+function M.is_auto_activate_enabled()
+	-- Buffer-local variable takes precedence if set
+	local buf_value = vim.b.uv_auto_activate_venv
+	if buf_value ~= nil then
+		return buf_value
+	end
+
+	-- Global vim variable takes precedence over config
+	local global_value = vim.g.uv_auto_activate_venv
+	if global_value ~= nil then
+		return global_value
+	end
+
+	-- Fall back to config value
+	return M.config.auto_activate_venv
+end
+
+-- Set auto-activate venv setting
+---@param value boolean The value to set
+---@param buffer_local? boolean If true, sets buffer-local variable instead of global
+function M.set_auto_activate_venv(value, buffer_local)
+	if buffer_local then
+		vim.b.uv_auto_activate_venv = value
+	else
+		vim.g.uv_auto_activate_venv = value
+	end
+end
+
+-- Toggle auto-activate venv setting
+---@param buffer_local? boolean If true, toggles buffer-local variable instead of global
+function M.toggle_auto_activate_venv(buffer_local)
+	local current = M.is_auto_activate_enabled()
+	local new_value = not current
+
+	if buffer_local then
+		vim.b.uv_auto_activate_venv = new_value
+	else
+		vim.g.uv_auto_activate_venv = new_value
+	end
+
+	if M.config.notify_activate_venv then
+		local scope = buffer_local and "buffer" or "global"
+		vim.notify(
+			string.format("UV auto-activate venv (%s): %s", scope, new_value and "enabled" or "disabled"),
+			vim.log.levels.INFO
+		)
+	end
+end
+
 -- Virtual environment activation
 ---@param venv_path string
 function M.activate_venv(venv_path)
@@ -133,8 +185,14 @@ function M.activate_venv(venv_path)
 end
 
 -- Auto-activate the .venv if it exists at the project root
+-- Respects the granular vim.g/vim.b.uv_auto_activate_venv settings
 ---@return boolean
 function M.auto_activate_venv()
+	-- Check if auto-activation is enabled (respects buffer/global vim vars)
+	if not M.is_auto_activate_enabled() then
+		return false
+	end
+
 	local venv_path = vim.fn.getcwd() .. "/.venv"
 	if vim.fn.isdirectory(venv_path) == 1 then
 		M.activate_venv(venv_path)
@@ -744,6 +802,43 @@ function M.setup_commands()
 	vim.api.nvim_create_user_command("UVRemovePackage", function(opts)
 		M.run_command("uv remove " .. opts.args)
 	end, { nargs = 1 })
+
+	-- Commands for toggling auto-activate venv (granular control)
+	vim.api.nvim_create_user_command("UVAutoActivateToggle", function()
+		M.toggle_auto_activate_venv(false) -- global toggle
+	end, { desc = "Toggle auto-activate venv globally" })
+
+	vim.api.nvim_create_user_command("UVAutoActivateToggleBuffer", function()
+		M.toggle_auto_activate_venv(true) -- buffer-local toggle
+	end, { desc = "Toggle auto-activate venv for current buffer" })
+
+	vim.api.nvim_create_user_command("UVAutoActivateEnable", function()
+		M.set_auto_activate_venv(true, false) -- global enable
+		if M.config.notify_activate_venv then
+			vim.notify("UV auto-activate venv (global): enabled", vim.log.levels.INFO)
+		end
+	end, { desc = "Enable auto-activate venv globally" })
+
+	vim.api.nvim_create_user_command("UVAutoActivateDisable", function()
+		M.set_auto_activate_venv(false, false) -- global disable
+		if M.config.notify_activate_venv then
+			vim.notify("UV auto-activate venv (global): disabled", vim.log.levels.INFO)
+		end
+	end, { desc = "Disable auto-activate venv globally" })
+
+	vim.api.nvim_create_user_command("UVAutoActivateEnableBuffer", function()
+		M.set_auto_activate_venv(true, true) -- buffer-local enable
+		if M.config.notify_activate_venv then
+			vim.notify("UV auto-activate venv (buffer): enabled", vim.log.levels.INFO)
+		end
+	end, { desc = "Enable auto-activate venv for current buffer" })
+
+	vim.api.nvim_create_user_command("UVAutoActivateDisableBuffer", function()
+		M.set_auto_activate_venv(false, true) -- buffer-local disable
+		if M.config.notify_activate_venv then
+			vim.notify("UV auto-activate venv (buffer): disabled", vim.log.levels.INFO)
+		end
+	end, { desc = "Disable auto-activate venv for current buffer" })
 end
 
 -- Set up keymaps
@@ -891,16 +986,18 @@ end
 -- Set up auto commands
 function M.setup_autocommands()
 	if M.config.auto_commands then
-		if M.config.auto_activate_venv then
-			M.auto_activate_venv()
+		-- Auto-activate on startup (respects vim.g/vim.b settings internally)
+		M.auto_activate_venv()
 
-			vim.api.nvim_create_autocmd({ "DirChanged" }, {
-				pattern = { "global" },
-				callback = function()
-					M.auto_activate_venv()
-				end,
-			})
-		end
+		-- Re-activate when directory changes
+		-- The actual activation check happens inside auto_activate_venv()
+		-- which respects vim.g.uv_auto_activate_venv and vim.b.uv_auto_activate_venv
+		vim.api.nvim_create_autocmd({ "DirChanged" }, {
+			pattern = { "global" },
+			callback = function()
+				M.auto_activate_venv()
+			end,
+		})
 	end
 end
 

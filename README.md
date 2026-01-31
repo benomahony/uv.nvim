@@ -73,6 +73,8 @@ uv.nvim provides several commands:
 - `:UVRunFile` - Run the current Python file
 - `:UVRunSelection` - Run the selected Python code
 - `:UVRunFunction` - Run a specific function from the current file
+- `:UVAutoActivateToggle` - Toggle auto-activate venv globally
+- `:UVAutoActivateToggleBuffer` - Toggle auto-activate venv for current buffer
 
 ### Default Keymaps
 
@@ -156,6 +158,13 @@ uv.run_python_selection()
 
 -- Run a specific function
 uv.run_python_function()
+
+-- Granular auto-activate control
+uv.is_auto_activate_enabled()      -- Check if enabled (respects vim.b/vim.g)
+uv.toggle_auto_activate_venv()     -- Toggle globally
+uv.toggle_auto_activate_venv(true) -- Toggle buffer-local
+uv.set_auto_activate_venv(false)   -- Set globally
+uv.set_auto_activate_venv(true, true) -- Set buffer-local
 ```
 
 ## Customization Examples
@@ -188,6 +197,70 @@ require('uv').setup({
 ```lua
 require('uv').setup({
   keymaps = false  -- Disable all keymaps
+})
+```
+
+### Granular Auto-Activate Venv Control
+
+The `auto_activate_venv` setting can be toggled at runtime on a per-directory or per-buffer basis, similar to LazyVim's autoformat feature. This is useful when you want to disable auto-activation for specific projects.
+
+#### Vim Variables
+
+The plugin uses vim variables for granular control (buffer-local takes precedence over global):
+
+- `vim.g.uv_auto_activate_venv` - Global setting (overrides config)
+- `vim.b.uv_auto_activate_venv` - Buffer-local setting (overrides global)
+
+#### Commands
+
+- `:UVAutoActivateToggle` - Toggle auto-activate venv globally
+- `:UVAutoActivateToggleBuffer` - Toggle auto-activate venv for current buffer
+- `:UVAutoActivateEnable` - Enable auto-activate venv globally
+- `:UVAutoActivateDisable` - Disable auto-activate venv globally
+- `:UVAutoActivateEnableBuffer` - Enable auto-activate venv for current buffer
+- `:UVAutoActivateDisableBuffer` - Disable auto-activate venv for current buffer
+
+#### Lua API
+
+```lua
+local uv = require('uv')
+
+-- Check if auto-activate is currently enabled
+local enabled = uv.is_auto_activate_enabled()
+
+-- Toggle globally
+uv.toggle_auto_activate_venv()
+
+-- Toggle for current buffer only
+uv.toggle_auto_activate_venv(true)
+
+-- Set specific value globally
+uv.set_auto_activate_venv(false)
+
+-- Set specific value for current buffer
+uv.set_auto_activate_venv(true, true)
+```
+
+#### Per-Project Configuration
+
+To disable auto-activation for a specific project, add to your project-local config (e.g., `.nvim.lua` or `.lazy.lua`):
+
+```lua
+vim.g.uv_auto_activate_venv = false
+```
+
+Or use an autocmd to set it based on directory:
+
+```lua
+vim.api.nvim_create_autocmd("DirChanged", {
+  callback = function()
+    -- Disable for specific directories
+    if vim.fn.getcwd():match("some%-project") then
+      vim.g.uv_auto_activate_venv = false
+    else
+      vim.g.uv_auto_activate_venv = nil  -- Use default config
+    end
+  end,
 })
 ```
 
