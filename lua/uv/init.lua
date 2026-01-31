@@ -360,6 +360,20 @@ function M.run_python_selection()
 	open_term(cmd)
 end
 
+-- Function displaying a dropdown to select a package to remove
+function M.remove_package()
+	local package_list = vim.fn.systemlist("uv pip list --format=freeze | cut -d= -f1")
+
+	-- Show a picker to select the package
+	vim.ui.select(package_list, {
+		prompt = "Select package to remove:",
+	}, function(choice)
+		if choice then
+			M.run_command("uv remove " .. choice)
+		end
+	end)
+end
+
 -- Function to run a specific Python function
 function M.run_python_function()
 	-- Get current buffer content
@@ -850,7 +864,7 @@ function M.setup_keymaps()
 		vim.api.nvim_set_keymap(
 			"n",
 			prefix .. "d",
-			"<cmd>lua vim.ui.input({prompt = 'Enter package name: '}, function(input) if input and input ~= '' then require('uv').run_command('uv remove ' .. input) end end)<CR>",
+			"<cmd>lua require('uv').remove_package()<CR>",
 			{ noremap = true, silent = true, desc = "UV Remove Package" }
 		)
 	end
