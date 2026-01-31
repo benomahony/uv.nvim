@@ -143,6 +143,43 @@ function M.auto_activate_venv()
 	return false
 end
 
+-- Statusline helper: Check if a virtual environment is active
+---@return boolean
+function M.is_venv_active()
+	return vim.env.VIRTUAL_ENV ~= nil
+end
+
+-- Statusline helper: Get the name of the active virtual environment
+-- Reads the prompt from pyvenv.cfg if available, otherwise returns the venv folder name
+---@return string|nil
+function M.get_venv()
+	if not vim.env.VIRTUAL_ENV then
+		return nil
+	end
+
+	-- Try to read prompt from pyvenv.cfg
+	local pyvenv_cfg = vim.env.VIRTUAL_ENV .. "/pyvenv.cfg"
+
+	if vim.fn.filereadable(pyvenv_cfg) == 1 then
+		local lines = vim.fn.readfile(pyvenv_cfg)
+		for _, line in ipairs(lines) do
+			local prompt = line:match("^%s*prompt%s*=%s*(.+)%s*$")
+			if prompt then
+				return prompt
+			end
+		end
+	end
+
+	-- Fallback to venv folder name
+	return vim.fn.fnamemodify(vim.env.VIRTUAL_ENV, ":t")
+end
+
+-- Statusline helper: Get the full path of the active virtual environment
+---@return string|nil
+function M.get_venv_path()
+	return vim.env.VIRTUAL_ENV
+end
+
 -- Internal: open a terminal according to execution.terminal (no helper exported)
 ---@param cmd string
 local function open_term(cmd)
