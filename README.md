@@ -163,8 +163,6 @@ uv.run_python_function()
 uv.is_auto_activate_enabled()      -- Check if enabled (respects vim.b/vim.g)
 uv.toggle_auto_activate_venv()     -- Toggle globally
 uv.toggle_auto_activate_venv(true) -- Toggle buffer-local
-uv.set_auto_activate_venv(false)   -- Set globally
-uv.set_auto_activate_venv(true, true) -- Set buffer-local
 ```
 
 ## Customization Examples
@@ -215,30 +213,12 @@ The plugin uses vim variables for granular control (buffer-local takes precedenc
 
 - `:UVAutoActivateToggle` - Toggle auto-activate venv globally
 - `:UVAutoActivateToggleBuffer` - Toggle auto-activate venv for current buffer
-- `:UVAutoActivateEnable` - Enable auto-activate venv globally
-- `:UVAutoActivateDisable` - Disable auto-activate venv globally
-- `:UVAutoActivateEnableBuffer` - Enable auto-activate venv for current buffer
-- `:UVAutoActivateDisableBuffer` - Disable auto-activate venv for current buffer
 
-#### Lua API
+You can also set the vim variables directly:
 
 ```lua
-local uv = require('uv')
-
--- Check if auto-activate is currently enabled
-local enabled = uv.is_auto_activate_enabled()
-
--- Toggle globally
-uv.toggle_auto_activate_venv()
-
--- Toggle for current buffer only
-uv.toggle_auto_activate_venv(true)
-
--- Set specific value globally
-uv.set_auto_activate_venv(false)
-
--- Set specific value for current buffer
-uv.set_auto_activate_venv(true, true)
+vim.g.uv_auto_activate_venv = false  -- Disable globally
+vim.b.uv_auto_activate_venv = true   -- Enable for current buffer
 ```
 
 #### Per-Project Configuration

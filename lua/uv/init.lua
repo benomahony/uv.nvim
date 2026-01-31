@@ -138,17 +138,6 @@ function M.is_auto_activate_enabled()
 	return M.config.auto_activate_venv
 end
 
--- Set auto-activate venv setting
----@param value boolean The value to set
----@param buffer_local? boolean If true, sets buffer-local variable instead of global
-function M.set_auto_activate_venv(value, buffer_local)
-	if buffer_local then
-		vim.b.uv_auto_activate_venv = value
-	else
-		vim.g.uv_auto_activate_venv = value
-	end
-end
-
 -- Toggle auto-activate venv setting
 ---@param buffer_local? boolean If true, toggles buffer-local variable instead of global
 function M.toggle_auto_activate_venv(buffer_local)
@@ -803,42 +792,14 @@ function M.setup_commands()
 		M.run_command("uv remove " .. opts.args)
 	end, { nargs = 1 })
 
-	-- Commands for toggling auto-activate venv (granular control)
+	-- Toggle auto-activate venv (granular control)
 	vim.api.nvim_create_user_command("UVAutoActivateToggle", function()
-		M.toggle_auto_activate_venv(false) -- global toggle
+		M.toggle_auto_activate_venv(false)
 	end, { desc = "Toggle auto-activate venv globally" })
 
 	vim.api.nvim_create_user_command("UVAutoActivateToggleBuffer", function()
-		M.toggle_auto_activate_venv(true) -- buffer-local toggle
+		M.toggle_auto_activate_venv(true)
 	end, { desc = "Toggle auto-activate venv for current buffer" })
-
-	vim.api.nvim_create_user_command("UVAutoActivateEnable", function()
-		M.set_auto_activate_venv(true, false) -- global enable
-		if M.config.notify_activate_venv then
-			vim.notify("UV auto-activate venv (global): enabled", vim.log.levels.INFO)
-		end
-	end, { desc = "Enable auto-activate venv globally" })
-
-	vim.api.nvim_create_user_command("UVAutoActivateDisable", function()
-		M.set_auto_activate_venv(false, false) -- global disable
-		if M.config.notify_activate_venv then
-			vim.notify("UV auto-activate venv (global): disabled", vim.log.levels.INFO)
-		end
-	end, { desc = "Disable auto-activate venv globally" })
-
-	vim.api.nvim_create_user_command("UVAutoActivateEnableBuffer", function()
-		M.set_auto_activate_venv(true, true) -- buffer-local enable
-		if M.config.notify_activate_venv then
-			vim.notify("UV auto-activate venv (buffer): enabled", vim.log.levels.INFO)
-		end
-	end, { desc = "Enable auto-activate venv for current buffer" })
-
-	vim.api.nvim_create_user_command("UVAutoActivateDisableBuffer", function()
-		M.set_auto_activate_venv(false, true) -- buffer-local disable
-		if M.config.notify_activate_venv then
-			vim.notify("UV auto-activate venv (buffer): disabled", vim.log.levels.INFO)
-		end
-	end, { desc = "Disable auto-activate venv for current buffer" })
 end
 
 -- Set up keymaps
