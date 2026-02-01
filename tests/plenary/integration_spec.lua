@@ -82,7 +82,7 @@ describe("uv.nvim integration", function()
 
 	describe("complete workflow", function()
 		it("handles project with venv", function()
-			-- Create a mock project structure
+			-- Create a test project structure with .venv
 			vim.fn.mkdir(test_dir .. "/.venv/bin", "p")
 
 			-- Change to test directory
