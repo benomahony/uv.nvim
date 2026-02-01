@@ -4,16 +4,16 @@
 local uv = require("uv")
 
 local function assert_eq(expected, actual, message)
-    if expected ~= actual then
-        error(string.format("%s: expected %s, got %s", message or "Assertion failed", vim.inspect(expected), vim.inspect(actual)))
-    end
-    print(string.format("PASS: %s", message or "assertion"))
+	if expected ~= actual then
+		error(string.format("%s: expected %s, got %s", message or "Assertion failed", vim.inspect(expected), vim.inspect(actual)))
+	end
+	print(string.format("PASS: %s", message or "assertion"))
 end
 
 local function reset_state()
-    vim.g.uv_auto_activate_venv = nil
-    vim.b.uv_auto_activate_venv = nil
-    uv.config.auto_activate_venv = true
+	vim.g.uv_auto_activate_venv = nil
+	vim.b.uv_auto_activate_venv = nil
+	uv.config.auto_activate_venv = true
 end
 
 print("\n=== Testing auto_activate_venv setting ===\n")
