@@ -542,20 +542,20 @@ function M.setup_pickers()
 						if mode == "v" or mode == "V" or mode == "" then
 							vim.cmd("normal! \27")
 							vim.defer_fn(function()
-							    M.run_python_selection()
+								M.run_python_selection()
 							end, 100)
 						else
 							vim.notify(
-							    "Please select text first. Enter visual mode (v) and select code to run.",
-							    vim.log.levels.INFO
+								"Please select text first. Enter visual mode (v) and select code to run.",
+								vim.log.levels.INFO
 							)
 							vim.api.nvim_create_autocmd("ModeChanged", {
-							    pattern = "[vV\x16]*:n",
-							    callback = function(_)
-							        M.run_python_selection()
-							        return true
-							    end,
-							    once = true,
+								pattern = "[vV\x16]*:n",
+								callback = function(_)
+									M.run_python_selection()
+									return true
+								end,
+								once = true,
 							})
 						end
 						return
@@ -569,8 +569,8 @@ function M.setup_pickers()
 						local param_name = cmd:match("%[(.-)%]")
 						vim.ui.input({ prompt = "Enter " .. param_name .. ": " }, function(input)
 							if not input or input == "" then
-							    vim.notify("Cancelled", vim.log.levels.INFO)
-							    return
+								vim.notify("Cancelled", vim.log.levels.INFO)
+								return
 							end
 							local actual_cmd = cmd:gsub("%[" .. param_name .. "%]", input)
 							M.run_command(actual_cmd)
@@ -652,9 +652,9 @@ function M.setup_pickers()
 						results = items,
 						entry_maker = function(entry)
 							return {
-							    value = entry,
-							    display = entry.text,
-							    ordinal = entry.text,
+								value = entry,
+								display = entry.text,
+								ordinal = entry.text,
 							}
 						end,
 					}),
@@ -664,47 +664,47 @@ function M.setup_pickers()
 							local selection = action_state.get_selected_entry().value
 							actions.close(prompt_bufnr)
 							if selection.is_run_current then
-							    M.run_file()
+								M.run_file()
 							elseif selection.is_run_selection then
-							    local mode = vim.fn.mode()
-							    if mode == "v" or mode == "V" or mode == "" then
-							        vim.cmd("normal! \27")
-							        vim.defer_fn(function()
-							            M.run_python_selection()
-							        end, 100)
-							    else
-							        vim.notify(
-							            "Please select text first. Enter visual mode (v) and select code to run.",
-							            vim.log.levels.INFO
-							        )
-							        vim.api.nvim_create_autocmd("ModeChanged", {
-							            pattern = "[vV\x16]*:n",
-							            callback = function()
-							                M.run_python_selection()
-							                return true
-							            end,
-							            once = true,
-							        })
-							    end
+								local mode = vim.fn.mode()
+								if mode == "v" or mode == "V" or mode == "" then
+									vim.cmd("normal! \27")
+									vim.defer_fn(function()
+										M.run_python_selection()
+									end, 100)
+								else
+									vim.notify(
+										"Please select text first. Enter visual mode (v) and select code to run.",
+										vim.log.levels.INFO
+									)
+									vim.api.nvim_create_autocmd("ModeChanged", {
+										pattern = "[vV\x16]*:n",
+										callback = function()
+											M.run_python_selection()
+											return true
+										end,
+										once = true,
+									})
+								end
 							elseif selection.is_run_function then
-							    M.run_python_function()
+								M.run_python_function()
 							else
-							    if selection.needs_input then
-							        local placeholder = selection.text:match("%[(.-)%]")
-							        vim.ui.input(
-							            { prompt = "Enter " .. (placeholder or "value") .. ": " },
-							            function(input)
-							                if input and input ~= "" then
-							                    local cmd = selection.cmd .. input
-							                    M.run_command(cmd)
-							                else
-							                    vim.notify("Cancelled", vim.log.levels.INFO)
-							                end
-							            end
-							        )
-							    else
-							        M.run_command(selection.cmd)
-							    end
+								if selection.needs_input then
+									local placeholder = selection.text:match("%[(.-)%]")
+									vim.ui.input(
+										{ prompt = "Enter " .. (placeholder or "value") .. ": " },
+										function(input)
+											if input and input ~= "" then
+												local cmd = selection.cmd .. input
+												M.run_command(cmd)
+											else
+												vim.notify("Cancelled", vim.log.levels.INFO)
+											end
+										end
+									)
+								else
+									M.run_command(selection.cmd)
+								end
 							end
 						end
 
@@ -736,11 +736,11 @@ function M.setup_pickers()
 						results = items,
 						entry_maker = function(entry)
 							local display = entry.is_create and "+ " .. entry.text
-							    or ((entry.is_current and "● " or "○ ") .. entry.text .. " (Activate)")
+								or ((entry.is_current and "● " or "○ ") .. entry.text .. " (Activate)")
 							return {
-							    value = entry,
-							    display = display,
-							    ordinal = display,
+								value = entry,
+								display = display,
+								ordinal = display,
 							}
 						end,
 					}),
@@ -750,9 +750,9 @@ function M.setup_pickers()
 							local selection = action_state.get_selected_entry().value
 							actions.close(prompt_bufnr)
 							if selection.is_create then
-							    M.run_command("uv venv")
+								M.run_command("uv venv")
 							else
-							    M.activate_venv(selection.path)
+								M.activate_venv(selection.path)
 							end
 						end
 
