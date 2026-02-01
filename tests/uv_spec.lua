@@ -1,5 +1,5 @@
 -- Tests for uv.nvim core functionality
--- Run with: nvim --headless -u tests/minimal_init.lua -c "luafile tests/uv_spec.lua" -c "qa!"
+-- Run with: nvim --headless -u tests/minimal_init.lua -c "luafile tests/uv_spec.lua"
 
 assert(vim and vim.fn, "This test must be run in Neovim")
 
@@ -18,24 +18,6 @@ local function it(name, fn)
 	end
 end
 
-local function assert_eq(expected, actual, msg)
-	if expected ~= actual then
-		error((msg or "Assertion failed") .. ": expected " .. tostring(expected) .. ", got " .. tostring(actual))
-	end
-end
-
-local function assert_true(val, msg)
-	if not val then
-		error((msg or "Expected true") .. ", got " .. tostring(val))
-	end
-end
-
-local function assert_false(val, msg)
-	if val then
-		error((msg or "Expected false") .. ", got " .. tostring(val))
-	end
-end
-
 -- Store original state
 local original_path = vim.env.PATH
 local original_venv = vim.env.VIRTUAL_ENV
@@ -47,7 +29,6 @@ local function reset_env()
 	vim.cmd("cd " .. vim.fn.fnameescape(original_cwd))
 end
 
--- Load module fresh for each test
 local function fresh_uv()
 	package.loaded["uv"] = nil
 	return require("uv")
@@ -55,15 +36,14 @@ end
 
 print("\n=== uv.nvim tests ===\n")
 
--- Configuration tests
 print("Configuration:")
 
 it("has correct default config", function()
 	local uv = fresh_uv()
-	assert_true(uv.config.auto_activate_venv)
-	assert_eq("<leader>x", uv.config.keymaps.prefix)
-	assert_eq("uv run python", uv.config.execution.run_command)
-	assert_eq("split", uv.config.execution.terminal)
+	assert(uv.config.auto_activate_venv == true)
+	assert(uv.config.keymaps.prefix == "<leader>x")
+	assert(uv.config.execution.run_command == "uv run python")
+	assert(uv.config.execution.terminal == "split")
 end)
 
 it("merges custom config", function()
@@ -74,8 +54,8 @@ it("merges custom config", function()
 		keymaps = false,
 		picker_integration = false,
 	})
-	assert_false(uv.config.auto_activate_venv)
-	assert_true(uv.config.notify_activate_venv) -- default preserved
+	assert(uv.config.auto_activate_venv == false)
+	assert(uv.config.notify_activate_venv == true) -- default preserved
 end)
 
 it("accepts custom execution config", function()
@@ -86,24 +66,22 @@ it("accepts custom execution config", function()
 		keymaps = false,
 		picker_integration = false,
 	})
-	assert_eq("python3", uv.config.execution.run_command)
-	assert_eq("vsplit", uv.config.execution.terminal)
+	assert(uv.config.execution.run_command == "python3")
+	assert(uv.config.execution.terminal == "vsplit")
 end)
 
--- Command registration tests
 print("\nCommands:")
 
 it("registers user commands", function()
 	local uv = fresh_uv()
 	uv.setup({ auto_commands = false, keymaps = false, picker_integration = false })
 	local cmds = vim.api.nvim_get_commands({})
-	assert_true(cmds.UVInit ~= nil, "UVInit should exist")
-	assert_true(cmds.UVRunFile ~= nil, "UVRunFile should exist")
-	assert_true(cmds.UVRunSelection ~= nil, "UVRunSelection should exist")
-	assert_true(cmds.UVRunFunction ~= nil, "UVRunFunction should exist")
+	assert(cmds.UVInit ~= nil, "UVInit should exist")
+	assert(cmds.UVRunFile ~= nil, "UVRunFile should exist")
+	assert(cmds.UVRunSelection ~= nil, "UVRunSelection should exist")
+	assert(cmds.UVRunFunction ~= nil, "UVRunFunction should exist")
 end)
 
--- Virtual environment tests
 print("\nVirtual Environment:")
 
 it("activate_venv sets VIRTUAL_ENV", function()
@@ -113,7 +91,7 @@ it("activate_venv sets VIRTUAL_ENV", function()
 	vim.fn.mkdir(test_path .. "/bin", "p")
 
 	uv.activate_venv(test_path)
-	assert_eq(test_path, vim.env.VIRTUAL_ENV)
+	assert(vim.env.VIRTUAL_ENV == test_path)
 
 	reset_env()
 	vim.fn.delete(test_path, "rf")
@@ -126,7 +104,7 @@ it("activate_venv prepends to PATH", function()
 	vim.fn.mkdir(test_path .. "/bin", "p")
 
 	uv.activate_venv(test_path)
-	assert_true(vim.env.PATH:find(test_path .. "/bin", 1, true) == 1, "PATH should start with venv bin")
+	assert(vim.env.PATH:find(test_path .. "/bin", 1, true) == 1, "PATH should start with venv bin")
 
 	reset_env()
 	vim.fn.delete(test_path, "rf")
@@ -139,7 +117,7 @@ it("auto_activate_venv returns false when no .venv", function()
 	vim.fn.mkdir(temp_dir, "p")
 	vim.cmd("cd " .. vim.fn.fnameescape(temp_dir))
 
-	assert_false(uv.auto_activate_venv())
+	assert(uv.auto_activate_venv() == false)
 
 	reset_env()
 	vim.fn.delete(temp_dir, "rf")
@@ -152,7 +130,7 @@ it("auto_activate_venv returns true when .venv exists", function()
 	vim.fn.mkdir(temp_dir .. "/.venv/bin", "p")
 	vim.cmd("cd " .. vim.fn.fnameescape(temp_dir))
 
-	assert_true(uv.auto_activate_venv())
+	assert(uv.auto_activate_venv() == true)
 
 	reset_env()
 	vim.fn.delete(temp_dir, "rf")
@@ -161,40 +139,37 @@ end)
 it("is_venv_active reflects VIRTUAL_ENV state", function()
 	local uv = fresh_uv()
 	vim.env.VIRTUAL_ENV = nil
-	assert_false(uv.is_venv_active())
+	assert(uv.is_venv_active() == false)
 
 	vim.env.VIRTUAL_ENV = "/some/path"
-	assert_true(uv.is_venv_active())
+	assert(uv.is_venv_active() == true)
 
 	reset_env()
 end)
 
--- API tests
 print("\nAPI:")
 
 it("exports expected functions", function()
 	local uv = fresh_uv()
-	assert_eq("function", type(uv.setup))
-	assert_eq("function", type(uv.activate_venv))
-	assert_eq("function", type(uv.auto_activate_venv))
-	assert_eq("function", type(uv.run_file))
-	assert_eq("function", type(uv.run_command))
-	assert_eq("function", type(uv.is_venv_active))
-	assert_eq("function", type(uv.get_venv))
-	assert_eq("function", type(uv.get_venv_path))
+	assert(type(uv.setup) == "function")
+	assert(type(uv.activate_venv) == "function")
+	assert(type(uv.auto_activate_venv) == "function")
+	assert(type(uv.run_file) == "function")
+	assert(type(uv.run_command) == "function")
+	assert(type(uv.is_venv_active) == "function")
+	assert(type(uv.get_venv) == "function")
+	assert(type(uv.get_venv_path) == "function")
 end)
 
 it("setup exposes run_command globally", function()
 	local uv = fresh_uv()
 	_G.run_command = nil
 	uv.setup({ auto_commands = false, keymaps = false, picker_integration = false })
-	assert_eq("function", type(_G.run_command))
+	assert(type(_G.run_command) == "function")
 end)
 
--- Cleanup
 reset_env()
 
--- Summary
 print("\n" .. string.rep("=", 40))
 print(string.format("Tests: %d passed, %d failed", tests_passed, tests_failed))
 print(string.rep("=", 40))
