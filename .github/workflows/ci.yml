@@ -28,7 +28,7 @@ jobs:
       - name: Run tests
         run: |
           nvim --version
-          nvim --headless -u tests/minimal_init.lua -c "luafile tests/uv_spec.lua"
+          nvim --headless -u tests/minimal_init.lua -c "PlenaryBustedDirectory tests/ {minimal_init = 'tests/minimal_init.lua'}"
 
   lint:
     name: Lint

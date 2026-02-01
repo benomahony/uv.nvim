@@ -1,9 +1,5 @@
--- Tests for uv.nvim core functionality
--- Run with: nvim --headless -u tests/minimal_init.lua -c "luafile tests/uv_spec.lua"
-
 local uv = require("uv")
 
--- Store original state
 local original_path = vim.env.PATH
 local original_venv = vim.env.VIRTUAL_ENV
 local original_cwd = vim.fn.getcwd()
@@ -14,129 +10,134 @@ local function reset_env()
 	vim.cmd("cd " .. vim.fn.fnameescape(original_cwd))
 end
 
-print("\n=== uv.nvim tests ===\n")
+local function fresh_uv()
+	package.loaded["uv"] = nil
+	return require("uv")
+end
 
--- Configuration tests
-print("Configuration:")
+describe("uv.nvim", function()
+	after_each(function()
+		reset_env()
+	end)
 
-assert(uv.config.auto_activate_venv == true)
-assert(uv.config.keymaps.prefix == "<leader>x")
-assert(uv.config.execution.run_command == "uv run python")
-assert(uv.config.execution.terminal == "split")
-print("PASS: default config")
+	describe("configuration", function()
+		it("has correct defaults", function()
+			local m = fresh_uv()
+			assert.is_true(m.config.auto_activate_venv)
+			assert.are.equal("<leader>x", m.config.keymaps.prefix)
+			assert.are.equal("uv run python", m.config.execution.run_command)
+			assert.are.equal("split", m.config.execution.terminal)
+		end)
 
-package.loaded["uv"] = nil
-uv = require("uv")
-uv.setup({ auto_activate_venv = false, auto_commands = false, keymaps = false, picker_integration = false })
-assert(uv.config.auto_activate_venv == false)
-assert(uv.config.notify_activate_venv == true)
-print("PASS: merges custom config")
+		it("merges custom config", function()
+			local m = fresh_uv()
+			m.setup({ auto_activate_venv = false, auto_commands = false, keymaps = false, picker_integration = false })
+			assert.is_false(m.config.auto_activate_venv)
+			assert.is_true(m.config.notify_activate_venv)
+		end)
 
-package.loaded["uv"] = nil
-uv = require("uv")
-uv.setup({
-	execution = { run_command = "python3", terminal = "vsplit" },
-	auto_commands = false,
-	keymaps = false,
-	picker_integration = false,
-})
-assert(uv.config.execution.run_command == "python3")
-assert(uv.config.execution.terminal == "vsplit")
-print("PASS: custom execution config")
+		it("accepts custom execution config", function()
+			local m = fresh_uv()
+			m.setup({
+				execution = { run_command = "python3", terminal = "vsplit" },
+				auto_commands = false,
+				keymaps = false,
+				picker_integration = false,
+			})
+			assert.are.equal("python3", m.config.execution.run_command)
+			assert.are.equal("vsplit", m.config.execution.terminal)
+		end)
+	end)
 
--- Command tests
-print("\nCommands:")
+	describe("commands", function()
+		it("registers user commands", function()
+			local m = fresh_uv()
+			m.setup({ auto_commands = false, keymaps = false, picker_integration = false })
+			local cmds = vim.api.nvim_get_commands({})
+			assert.is_not_nil(cmds.UVInit)
+			assert.is_not_nil(cmds.UVRunFile)
+			assert.is_not_nil(cmds.UVRunSelection)
+			assert.is_not_nil(cmds.UVRunFunction)
+		end)
+	end)
 
-package.loaded["uv"] = nil
-uv = require("uv")
-uv.setup({ auto_commands = false, keymaps = false, picker_integration = false })
-local cmds = vim.api.nvim_get_commands({})
-assert(cmds.UVInit ~= nil, "UVInit should exist")
-assert(cmds.UVRunFile ~= nil, "UVRunFile should exist")
-assert(cmds.UVRunSelection ~= nil, "UVRunSelection should exist")
-assert(cmds.UVRunFunction ~= nil, "UVRunFunction should exist")
-print("PASS: registers user commands")
+	describe("virtual environment", function()
+		it("activate_venv sets VIRTUAL_ENV", function()
+			local m = fresh_uv()
+			m.config.notify_activate_venv = false
+			local test_path = vim.fn.tempname()
+			vim.fn.mkdir(test_path .. "/bin", "p")
 
--- Virtual environment tests
-print("\nVirtual Environment:")
+			m.activate_venv(test_path)
+			assert.are.equal(test_path, vim.env.VIRTUAL_ENV)
 
-package.loaded["uv"] = nil
-uv = require("uv")
-uv.config.notify_activate_venv = false
-local test_path = vim.fn.tempname()
-vim.fn.mkdir(test_path .. "/bin", "p")
-uv.activate_venv(test_path)
-assert(vim.env.VIRTUAL_ENV == test_path)
-reset_env()
-vim.fn.delete(test_path, "rf")
-print("PASS: activate_venv sets VIRTUAL_ENV")
+			vim.fn.delete(test_path, "rf")
+		end)
 
-package.loaded["uv"] = nil
-uv = require("uv")
-uv.config.notify_activate_venv = false
-test_path = vim.fn.tempname()
-vim.fn.mkdir(test_path .. "/bin", "p")
-uv.activate_venv(test_path)
-assert(vim.env.PATH:find(test_path .. "/bin", 1, true) == 1, "PATH should start with venv bin")
-reset_env()
-vim.fn.delete(test_path, "rf")
-print("PASS: activate_venv prepends to PATH")
+		it("activate_venv prepends to PATH", function()
+			local m = fresh_uv()
+			m.config.notify_activate_venv = false
+			local test_path = vim.fn.tempname()
+			vim.fn.mkdir(test_path .. "/bin", "p")
 
-package.loaded["uv"] = nil
-uv = require("uv")
-uv.config.notify_activate_venv = false
-local temp_dir = vim.fn.tempname()
-vim.fn.mkdir(temp_dir, "p")
-vim.cmd("cd " .. vim.fn.fnameescape(temp_dir))
-assert(uv.auto_activate_venv() == false)
-reset_env()
-vim.fn.delete(temp_dir, "rf")
-print("PASS: auto_activate_venv returns false when no .venv")
+			m.activate_venv(test_path)
+			assert.are.equal(1, vim.env.PATH:find(test_path .. "/bin", 1, true))
 
-package.loaded["uv"] = nil
-uv = require("uv")
-uv.config.notify_activate_venv = false
-temp_dir = vim.fn.tempname()
-vim.fn.mkdir(temp_dir .. "/.venv/bin", "p")
-vim.cmd("cd " .. vim.fn.fnameescape(temp_dir))
-assert(uv.auto_activate_venv() == true)
-reset_env()
-vim.fn.delete(temp_dir, "rf")
-print("PASS: auto_activate_venv returns true when .venv exists")
+			vim.fn.delete(test_path, "rf")
+		end)
 
-package.loaded["uv"] = nil
-uv = require("uv")
-vim.env.VIRTUAL_ENV = nil
-assert(uv.is_venv_active() == false)
-vim.env.VIRTUAL_ENV = "/some/path"
-assert(uv.is_venv_active() == true)
-reset_env()
-print("PASS: is_venv_active reflects VIRTUAL_ENV state")
+		it("auto_activate_venv returns false when no .venv", function()
+			local m = fresh_uv()
+			m.config.notify_activate_venv = false
+			local temp_dir = vim.fn.tempname()
+			vim.fn.mkdir(temp_dir, "p")
+			vim.cmd("cd " .. vim.fn.fnameescape(temp_dir))
 
--- API tests
-print("\nAPI:")
+			assert.is_false(m.auto_activate_venv())
 
-package.loaded["uv"] = nil
-uv = require("uv")
-assert(type(uv.setup) == "function")
-assert(type(uv.activate_venv) == "function")
-assert(type(uv.auto_activate_venv) == "function")
-assert(type(uv.run_file) == "function")
-assert(type(uv.run_command) == "function")
-assert(type(uv.is_venv_active) == "function")
-assert(type(uv.get_venv) == "function")
-assert(type(uv.get_venv_path) == "function")
-print("PASS: exports expected functions")
+			vim.fn.delete(temp_dir, "rf")
+		end)
 
-package.loaded["uv"] = nil
-uv = require("uv")
-_G.run_command = nil
-uv.setup({ auto_commands = false, keymaps = false, picker_integration = false })
-assert(type(_G.run_command) == "function")
-print("PASS: setup exposes run_command globally")
+		it("auto_activate_venv returns true when .venv exists", function()
+			local m = fresh_uv()
+			m.config.notify_activate_venv = false
+			local temp_dir = vim.fn.tempname()
+			vim.fn.mkdir(temp_dir .. "/.venv/bin", "p")
+			vim.cmd("cd " .. vim.fn.fnameescape(temp_dir))
 
-reset_env()
+			assert.is_true(m.auto_activate_venv())
 
-print("\n=== All tests passed! ===\n")
+			vim.fn.delete(temp_dir, "rf")
+		end)
 
-vim.cmd("qa!")
+		it("is_venv_active reflects VIRTUAL_ENV state", function()
+			local m = fresh_uv()
+			vim.env.VIRTUAL_ENV = nil
+			assert.is_false(m.is_venv_active())
+
+			vim.env.VIRTUAL_ENV = "/some/path"
+			assert.is_true(m.is_venv_active())
+		end)
+	end)
+
+	describe("API", function()
+		it("exports expected functions", function()
+			local m = fresh_uv()
+			assert.are.equal("function", type(m.setup))
+			assert.are.equal("function", type(m.activate_venv))
+			assert.are.equal("function", type(m.auto_activate_venv))
+			assert.are.equal("function", type(m.run_file))
+			assert.are.equal("function", type(m.run_command))
+			assert.are.equal("function", type(m.is_venv_active))
+			assert.are.equal("function", type(m.get_venv))
+			assert.are.equal("function", type(m.get_venv_path))
+		end)
+
+		it("setup exposes run_command globally", function()
+			local m = fresh_uv()
+			_G.run_command = nil
+			m.setup({ auto_commands = false, keymaps = false, picker_integration = false })
+			assert.are.equal("function", type(_G.run_command))
+		end)
+	end)
+end)

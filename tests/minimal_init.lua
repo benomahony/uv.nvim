@@ -1,33 +1,11 @@
--- Minimal init.lua for running tests
--- This sets up the runtime path and loads required plugins
-
-local plenary_path = vim.fn.stdpath("data") .. "/lazy/plenary.nvim"
-
--- Add plenary to runtime path if it exists
-if vim.fn.isdirectory(plenary_path) == 1 then
-	vim.opt.runtimepath:append(plenary_path)
-else
-	-- Try alternative locations
-	local alt_paths = {
-		vim.fn.expand("~/.local/share/nvim/lazy/plenary.nvim"),
-		vim.fn.expand("~/.local/share/nvim/site/pack/packer/start/plenary.nvim"),
-		vim.fn.expand("~/.local/share/nvim/site/pack/*/start/plenary.nvim"),
-	}
-	for _, path in ipairs(alt_paths) do
-		if vim.fn.isdirectory(path) == 1 then
-			vim.opt.runtimepath:append(path)
-			break
-		end
-	end
-end
-
--- Add the plugin itself to runtime path
+-- Minimal init.lua for running plenary tests
 vim.opt.runtimepath:prepend(vim.fn.getcwd())
 
--- Set up globals used by tests
-vim.g.mapleader = " "
+local plenary_path = vim.fn.stdpath("data") .. "/site/pack/test/start/plenary.nvim"
+if vim.fn.isdirectory(plenary_path) == 0 then
+	vim.fn.system({ "git", "clone", "https://github.com/nvim-lua/plenary.nvim", plenary_path })
+end
+vim.opt.runtimepath:append(plenary_path)
 
--- Disable some features for cleaner testing
+vim.g.mapleader = " "
 vim.opt.swapfile = false
-vim.opt.backup = false
-vim.opt.writebackup = false
