@@ -121,4 +121,19 @@ describe("uv.nvim", function()
 			assert.are.equal("function", type(_G.run_command))
 		end)
 	end)
+
+	describe("snacks picker preview", function()
+		local pattern = "^(uv %a+)"
+
+		it("extracts uv commands for help preview", function()
+			assert.are.equal("uv add", ("uv add [package]"):match(pattern))
+			assert.are.equal("uv sync", ("uv sync --all-extras"):match(pattern))
+			assert.are.equal("uv init", ("uv init"):match(pattern))
+		end)
+
+		it("returns nil for non-uv items", function()
+			assert.is_nil(("Run current file"):match(pattern))
+			assert.is_nil(("Run selection"):match(pattern))
+		end)
+	end)
 end)
