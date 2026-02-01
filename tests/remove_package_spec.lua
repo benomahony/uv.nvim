@@ -58,10 +58,7 @@ describe("keymap setup", function()
 			-- Check for keymap ending in 'd' with UV Remove Package description
 			if km.desc == "UV Remove Package" then
 				found = true
-				assert_true(
-					km.rhs:match("remove_package") or km.callback ~= nil,
-					"keymap should invoke remove_package"
-				)
+				assert_true(km.rhs:match("remove_package") or km.callback ~= nil, "keymap should invoke remove_package")
 				break
 			end
 		end

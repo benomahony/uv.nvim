@@ -5,7 +5,14 @@ local uv = require("uv")
 
 local function assert_eq(expected, actual, message)
 	if expected ~= actual then
-		error(string.format("%s: expected %s, got %s", message or "Assertion failed", vim.inspect(expected), vim.inspect(actual)))
+		error(
+			string.format(
+				"%s: expected %s, got %s",
+				message or "Assertion failed",
+				vim.inspect(expected),
+				vim.inspect(actual)
+			)
+		)
 	end
 	print(string.format("PASS: %s", message or "assertion"))
 end
