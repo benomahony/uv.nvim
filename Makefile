@@ -1,17 +1,10 @@
-.PHONY: test lint format help
-
-help:
-	@echo "uv.nvim - Makefile targets"
-	@echo ""
-	@echo "  make test   - Run tests"
-	@echo "  make lint   - Check formatting with stylua"
-	@echo "  make format - Format code with stylua"
+.PHONY: test lint format
 
 test:
-	@nvim --headless -u tests/minimal_init.lua -c "luafile tests/standalone/test_all.lua"
+	@nvim --headless -u tests/minimal_init.lua -c "luafile tests/uv_spec.lua"
 
 lint:
-	@stylua --check lua/ tests/ 2>/dev/null || echo "stylua not found, skipping"
+	@stylua --check lua/ tests/
 
 format:
 	@stylua lua/ tests/
