@@ -138,3 +138,5 @@ print("PASS: setup exposes run_command globally")
 reset_env()
 
 print("\n=== All tests passed! ===\n")
+
+vim.cmd("qa!")
