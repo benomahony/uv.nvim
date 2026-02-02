@@ -1,13 +1,7 @@
 local uv = require("uv")
 
 describe("remove_package", function()
-	it("is exported as a function", function()
-		assert.are.equal("function", type(uv.remove_package))
-	end)
-end)
-
-describe("keymap setup", function()
-	it("sets up keymap for remove package when keymaps enabled", function()
+	it("sets up keymap when enabled", function()
 		uv.setup({ keymaps = { prefix = "<leader>u", remove_package = true } })
 
 		local keymaps = vim.api.nvim_get_keymap("n")

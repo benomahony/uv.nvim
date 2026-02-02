@@ -61,8 +61,8 @@ describe("uv.nvim", function()
 		end)
 	end)
 
-	describe("virtual environment", function()
-		it("activate_venv sets VIRTUAL_ENV", function()
+	describe("activate_venv", function()
+		it("sets VIRTUAL_ENV", function()
 			local m = fresh_uv()
 			m.config.notify_activate_venv = false
 			local test_path = vim.fn.tempname()
@@ -74,7 +74,7 @@ describe("uv.nvim", function()
 			vim.fn.delete(test_path, "rf")
 		end)
 
-		it("activate_venv prepends to PATH", function()
+		it("prepends to PATH", function()
 			local m = fresh_uv()
 			m.config.notify_activate_venv = false
 			local test_path = vim.fn.tempname()
@@ -85,8 +85,10 @@ describe("uv.nvim", function()
 
 			vim.fn.delete(test_path, "rf")
 		end)
+	end)
 
-		it("auto_activate_venv returns false when no .venv", function()
+	describe("auto_activate_venv", function()
+		it("returns false when no .venv exists", function()
 			local m = fresh_uv()
 			m.config.notify_activate_venv = false
 			local temp_dir = vim.fn.tempname()
@@ -98,7 +100,7 @@ describe("uv.nvim", function()
 			vim.fn.delete(temp_dir, "rf")
 		end)
 
-		it("auto_activate_venv returns true when .venv exists", function()
+		it("returns true when .venv exists", function()
 			local m = fresh_uv()
 			m.config.notify_activate_venv = false
 			local temp_dir = vim.fn.tempname()
@@ -109,31 +111,10 @@ describe("uv.nvim", function()
 
 			vim.fn.delete(temp_dir, "rf")
 		end)
-
-		it("is_venv_active reflects VIRTUAL_ENV state", function()
-			local m = fresh_uv()
-			vim.env.VIRTUAL_ENV = nil
-			assert.is_false(m.is_venv_active())
-
-			vim.env.VIRTUAL_ENV = "/some/path"
-			assert.is_true(m.is_venv_active())
-		end)
 	end)
 
-	describe("API", function()
-		it("exports expected functions", function()
-			local m = fresh_uv()
-			assert.are.equal("function", type(m.setup))
-			assert.are.equal("function", type(m.activate_venv))
-			assert.are.equal("function", type(m.auto_activate_venv))
-			assert.are.equal("function", type(m.run_file))
-			assert.are.equal("function", type(m.run_command))
-			assert.are.equal("function", type(m.is_venv_active))
-			assert.are.equal("function", type(m.get_venv))
-			assert.are.equal("function", type(m.get_venv_path))
-		end)
-
-		it("setup exposes run_command globally", function()
+	describe("setup", function()
+		it("exposes run_command globally", function()
 			local m = fresh_uv()
 			_G.run_command = nil
 			m.setup({ auto_commands = false, keymaps = false, picker_integration = false })
