@@ -582,37 +582,17 @@ function M.setup_keymaps()
 	end
 
 	local prefix = keymaps.prefix or "<leader>x"
+	local picker = require("uv.picker")
 
 	-- Main UV command menu
 	if keymaps.commands then
-		if _G.Snacks and _G.Snacks.picker then
-			vim.api.nvim_set_keymap(
-				"n",
-				prefix,
-				"<cmd>lua Snacks.picker.pick('uv_commands')<CR>",
-				{ noremap = true, silent = true, desc = "UV Commands" }
-			)
-			vim.api.nvim_set_keymap(
-				"v",
-				prefix,
-				":<C-u>lua Snacks.picker.pick('uv_commands')<CR>",
-				{ noremap = true, silent = true, desc = "UV Commands" }
-			)
-		end
-		local has_telescope = pcall(require, "telescope")
-		if has_telescope then
-			vim.api.nvim_set_keymap(
-				"n",
-				prefix,
-				"<cmd>lua require('uv').pick_uv_commands()<CR>",
-				{ noremap = true, silent = true, desc = "UV Commands (Telescope)" }
-			)
-			vim.api.nvim_set_keymap(
-				"v",
-				prefix,
-				":<C-u>lua require('uv').pick_uv_commands()<CR>",
-				{ noremap = true, silent = true, desc = "UV Commands (Telescope)" }
-			)
+		local cmd_keymap, picker_name = picker.get_commands_keymap(M.config.picker_integration)
+		if cmd_keymap then
+			local desc = picker_name == "snacks" and "UV Commands" or "UV Commands (Telescope)"
+			vim.api.nvim_set_keymap("n", prefix, cmd_keymap, { noremap = true, silent = true, desc = desc })
+			-- Visual mode version
+			local vcmd = cmd_keymap:gsub("^<cmd>", ":<C-u>")
+			vim.api.nvim_set_keymap("v", prefix, vcmd, { noremap = true, silent = true, desc = desc })
 		end
 	end
 
@@ -648,22 +628,10 @@ function M.setup_keymaps()
 
 	-- Environment management
 	if keymaps.venv then
-		if _G.Snacks and _G.Snacks.picker then
-			vim.api.nvim_set_keymap(
-				"n",
-				prefix .. "e",
-				"<cmd>lua Snacks.picker.pick('uv_venv')<CR>",
-				{ noremap = true, silent = true, desc = "UV Environment" }
-			)
-		end
-		local has_telescope_venv = pcall(require, "telescope")
-		if has_telescope_venv then
-			vim.api.nvim_set_keymap(
-				"n",
-				prefix .. "e",
-				"<cmd>lua require('uv').pick_uv_venv()<CR>",
-				{ noremap = true, silent = true, desc = "UV Environment (Telescope)" }
-			)
+		local venv_keymap, picker_name = picker.get_venv_keymap(M.config.picker_integration)
+		if venv_keymap then
+			local desc = picker_name == "snacks" and "UV Environment" or "UV Environment (Telescope)"
+			vim.api.nvim_set_keymap("n", prefix .. "e", venv_keymap, { noremap = true, silent = true, desc = desc })
 		end
 	end
 
