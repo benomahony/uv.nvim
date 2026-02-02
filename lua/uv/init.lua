@@ -21,11 +21,13 @@
 ---@field sync boolean
 ---@field sync_all boolean
 
+---@alias PickerIntegration "auto"|"snacks"|"telescope"|"fzf-lua"|boolean
+
 ---@class UVConfig
 ---@field auto_activate_venv boolean
 ---@field notify_activate_venv boolean
 ---@field auto_commands boolean
----@field picker_integration boolean
+---@field picker_integration PickerIntegration
 ---@field keymaps UVKeymapsConfig|false
 ---@field execution UVExecutionConfig
 
@@ -43,8 +45,9 @@ M.config = {
 	-- Auto commands for directory changes
 	auto_commands = true,
 
-	-- Integration with picker (like Telescope or other UI components)
-	picker_integration = true,
+	-- Picker integration: "auto" | "snacks" | "telescope" | "fzf-lua" | false
+	-- "auto" tries snacks first, then telescope (backwards compatible with true)
+	picker_integration = "auto",
 
 	-- Keymaps to register (set to false to disable)
 	keymaps = {
@@ -510,268 +513,29 @@ end
 
 -- Set up command pickers for integration with UI plugins
 function M.setup_pickers()
-	-- Snacks
-	if _G.Snacks and _G.Snacks.picker then
-		Snacks.picker.sources.uv_commands = {
-			finder = function()
-				return {
-					{ text = "Run current file", desc = "Run current file with Python", is_run_current = true },
-					{ text = "Run selection", desc = "Run selected Python code", is_run_selection = true },
-					{ text = "Run function", desc = "Run specific Python function", is_run_function = true },
-					{ text = "uv add [package]", desc = "Install a package" },
-					{ text = "uv sync", desc = "Sync packages from lockfile" },
-					{
-						text = "uv sync --all-extras --all-packages --all-groups",
-						desc = "Sync all extras, groups and packages",
-					},
-					{ text = "uv remove [package]", desc = "Remove a package" },
-					{ text = "uv init", desc = "Initialize a new project" },
-				}
-			end,
-			preview = function(ctx)
-				local cmd = ctx.item.text:match("^(uv %a+)")
-				if cmd then
-					Snacks.picker.preview.cmd(cmd .. " --help", ctx)
-				else
-					ctx.preview:set_lines({})
-				end
-			end,
-			format = function(item)
-				return { { item.text .. " - " .. item.desc } }
-			end,
-			confirm = function(picker, item)
-				if item then
-					picker:close()
-					if item.is_run_current then
-						M.run_file()
-						return
-					elseif item.is_run_selection then
-						local mode = vim.fn.mode()
-						if mode == "v" or mode == "V" or mode == "" then
-							vim.cmd("normal! \27")
-							vim.defer_fn(function()
-								M.run_python_selection()
-							end, 100)
-						else
-							vim.notify(
-								"Please select text first. Enter visual mode (v) and select code to run.",
-								vim.log.levels.INFO
-							)
-							vim.api.nvim_create_autocmd("ModeChanged", {
-								pattern = "[vV\x16]*:n",
-								callback = function(_)
-									M.run_python_selection()
-									return true
-								end,
-								once = true,
-							})
-						end
-						return
-					elseif item.is_run_function then
-						M.run_python_function()
-						return
-					end
+	local picker = require("uv.picker")
 
-					local cmd = item.text
-					if cmd:match("%[(.-)%]") then
-						local param_name = cmd:match("%[(.-)%]")
-						vim.ui.input({ prompt = "Enter " .. param_name .. ": " }, function(input)
-							if not input or input == "" then
-								vim.notify("Cancelled", vim.log.levels.INFO)
-								return
-							end
-							local actual_cmd = cmd:gsub("%[" .. param_name .. "%]", input)
-							M.run_command(actual_cmd)
-						end)
-					else
-						M.run_command(cmd)
-					end
-				end
-			end,
-		}
+	local callbacks = {
+		run_file = M.run_file,
+		run_python_selection = M.run_python_selection,
+		run_python_function = M.run_python_function,
+		run_command = M.run_command,
+		activate_venv = M.activate_venv,
+	}
 
-		Snacks.picker.sources.uv_venv = {
-			finder = function()
-				local venvs = {}
-				if vim.fn.isdirectory(".venv") == 1 then
-					table.insert(venvs, {
-						text = ".venv",
-						path = vim.fn.getcwd() .. "/.venv",
-						is_current = vim.env.VIRTUAL_ENV and vim.env.VIRTUAL_ENV:match(".venv$") ~= nil,
-					})
-				end
-				if #venvs == 0 then
-					table.insert(venvs, {
-						text = "Create new virtual environment (uv venv)",
-						is_create = true,
-					})
-				end
-				return venvs
-			end,
-			format = function(item)
-				if item.is_create then
-					return { { "+ " .. item.text } }
-				else
-					local icon = item.is_current and "● " or "○ "
-					return { { icon .. item.text .. " (Activate)" } }
-				end
-			end,
-			confirm = function(picker, item)
-				picker:close()
-				if item then
-					if item.is_create then
-						M.run_command("uv venv")
-					else
-						M.activate_venv(item.path)
-					end
-				end
-			end,
-		}
+	local success = picker.setup(M.config.picker_integration, callbacks)
+
+	-- Expose telescope picker functions on M for backwards compatibility
+	local telescope_pickers = picker.get_commands_picker()
+	if telescope_pickers then
+		M.pick_uv_commands = telescope_pickers
+	end
+	local telescope_venv = picker.get_venv_picker()
+	if telescope_venv then
+		M.pick_uv_venv = telescope_venv
 	end
 
-	-- Telescope
-	local has_telescope, telescope = pcall(require, "telescope")
-	if has_telescope and telescope then
-		local pickers = require("telescope.pickers")
-		local finders = require("telescope.finders")
-		local sorters = require("telescope.sorters")
-		local actions = require("telescope.actions")
-		local action_state = require("telescope.actions.state")
-
-		function M.pick_uv_commands()
-			local items = {
-				{ text = "Run current file", is_run_current = true },
-				{ text = "Run selection", is_run_selection = true },
-				{ text = "Run function", is_run_function = true },
-				{ text = "uv add [package]", cmd = "uv add ", needs_input = true },
-				{ text = "uv sync", cmd = "uv sync" },
-				{
-					text = "uv sync --all-extras --all-packages --all-groups",
-					cmd = "uv sync --all-extras --all-packages --all-groups",
-				},
-				{ text = "uv remove [package]", cmd = "uv remove ", needs_input = true },
-				{ text = "uv init", cmd = "uv init" },
-			}
-
-			pickers
-				.new({}, {
-					prompt_title = "UV Commands",
-					finder = finders.new_table({
-						results = items,
-						entry_maker = function(entry)
-							return {
-								value = entry,
-								display = entry.text,
-								ordinal = entry.text,
-							}
-						end,
-					}),
-					sorter = sorters.get_generic_fuzzy_sorter(),
-					attach_mappings = function(prompt_bufnr, map)
-						local function on_select()
-							local selection = action_state.get_selected_entry().value
-							actions.close(prompt_bufnr)
-							if selection.is_run_current then
-								M.run_file()
-							elseif selection.is_run_selection then
-								local mode = vim.fn.mode()
-								if mode == "v" or mode == "V" or mode == "" then
-									vim.cmd("normal! \27")
-									vim.defer_fn(function()
-										M.run_python_selection()
-									end, 100)
-								else
-									vim.notify(
-										"Please select text first. Enter visual mode (v) and select code to run.",
-										vim.log.levels.INFO
-									)
-									vim.api.nvim_create_autocmd("ModeChanged", {
-										pattern = "[vV\x16]*:n",
-										callback = function()
-											M.run_python_selection()
-											return true
-										end,
-										once = true,
-									})
-								end
-							elseif selection.is_run_function then
-								M.run_python_function()
-							else
-								if selection.needs_input then
-									local placeholder = selection.text:match("%[(.-)%]")
-									vim.ui.input(
-										{ prompt = "Enter " .. (placeholder or "value") .. ": " },
-										function(input)
-											if input and input ~= "" then
-												local cmd = selection.cmd .. input
-												M.run_command(cmd)
-											else
-												vim.notify("Cancelled", vim.log.levels.INFO)
-											end
-										end
-									)
-								else
-									M.run_command(selection.cmd)
-								end
-							end
-						end
-
-						map("i", "<CR>", on_select)
-						map("n", "<CR>", on_select)
-						return true
-					end,
-				})
-				:find()
-		end
-
-		function M.pick_uv_venv()
-			local items = {}
-			if vim.fn.isdirectory(".venv") == 1 then
-				table.insert(items, {
-					text = ".venv",
-					path = vim.fn.getcwd() .. "/.venv",
-					is_current = vim.env.VIRTUAL_ENV and vim.env.VIRTUAL_ENV:match(".venv$") ~= nil,
-				})
-			end
-			if #items == 0 then
-				table.insert(items, { text = "Create new virtual environment (uv venv)", is_create = true })
-			end
-
-			pickers
-				.new({}, {
-					prompt_title = "UV Virtual Environments",
-					finder = finders.new_table({
-						results = items,
-						entry_maker = function(entry)
-							local display = entry.is_create and "+ " .. entry.text
-								or ((entry.is_current and "● " or "○ ") .. entry.text .. " (Activate)")
-							return {
-								value = entry,
-								display = display,
-								ordinal = display,
-							}
-						end,
-					}),
-					sorter = sorters.get_generic_fuzzy_sorter(),
-					attach_mappings = function(prompt_bufnr, map)
-						local function on_select()
-							local selection = action_state.get_selected_entry().value
-							actions.close(prompt_bufnr)
-							if selection.is_create then
-								M.run_command("uv venv")
-							else
-								M.activate_venv(selection.path)
-							end
-						end
-
-						map("i", "<CR>", on_select)
-						map("n", "<CR>", on_select)
-						return true
-					end,
-				})
-				:find()
-		end
-	end
+	return success
 end
 
 -- Set up user commands
@@ -818,37 +582,17 @@ function M.setup_keymaps()
 	end
 
 	local prefix = keymaps.prefix or "<leader>x"
+	local picker = require("uv.picker")
 
 	-- Main UV command menu
 	if keymaps.commands then
-		if _G.Snacks and _G.Snacks.picker then
-			vim.api.nvim_set_keymap(
-				"n",
-				prefix,
-				"<cmd>lua Snacks.picker.pick('uv_commands')<CR>",
-				{ noremap = true, silent = true, desc = "UV Commands" }
-			)
-			vim.api.nvim_set_keymap(
-				"v",
-				prefix,
-				":<C-u>lua Snacks.picker.pick('uv_commands')<CR>",
-				{ noremap = true, silent = true, desc = "UV Commands" }
-			)
-		end
-		local has_telescope = pcall(require, "telescope")
-		if has_telescope then
-			vim.api.nvim_set_keymap(
-				"n",
-				prefix,
-				"<cmd>lua require('uv').pick_uv_commands()<CR>",
-				{ noremap = true, silent = true, desc = "UV Commands (Telescope)" }
-			)
-			vim.api.nvim_set_keymap(
-				"v",
-				prefix,
-				":<C-u>lua require('uv').pick_uv_commands()<CR>",
-				{ noremap = true, silent = true, desc = "UV Commands (Telescope)" }
-			)
+		local cmd_keymap, picker_name = picker.get_commands_keymap(M.config.picker_integration)
+		if cmd_keymap then
+			local desc = picker_name == "snacks" and "UV Commands" or "UV Commands (Telescope)"
+			vim.api.nvim_set_keymap("n", prefix, cmd_keymap, { noremap = true, silent = true, desc = desc })
+			-- Visual mode version
+			local vcmd = cmd_keymap:gsub("^<cmd>", ":<C-u>")
+			vim.api.nvim_set_keymap("v", prefix, vcmd, { noremap = true, silent = true, desc = desc })
 		end
 	end
 
@@ -884,22 +628,10 @@ function M.setup_keymaps()
 
 	-- Environment management
 	if keymaps.venv then
-		if _G.Snacks and _G.Snacks.picker then
-			vim.api.nvim_set_keymap(
-				"n",
-				prefix .. "e",
-				"<cmd>lua Snacks.picker.pick('uv_venv')<CR>",
-				{ noremap = true, silent = true, desc = "UV Environment" }
-			)
-		end
-		local has_telescope_venv = pcall(require, "telescope")
-		if has_telescope_venv then
-			vim.api.nvim_set_keymap(
-				"n",
-				prefix .. "e",
-				"<cmd>lua require('uv').pick_uv_venv()<CR>",
-				{ noremap = true, silent = true, desc = "UV Environment (Telescope)" }
-			)
+		local venv_keymap, picker_name = picker.get_venv_keymap(M.config.picker_integration)
+		if venv_keymap then
+			local desc = picker_name == "snacks" and "UV Environment" or "UV Environment (Telescope)"
+			vim.api.nvim_set_keymap("n", prefix .. "e", venv_keymap, { noremap = true, silent = true, desc = desc })
 		end
 	end
 
@@ -989,8 +721,8 @@ function M.setup(opts)
 		M.setup_autocommands()
 	end
 
-	-- Set up pickers if integration is enabled
-	if M.config.picker_integration then
+	-- Set up pickers if integration is enabled (false disables, anything else enables)
+	if M.config.picker_integration ~= false then
 		M.setup_pickers()
 	end
 
