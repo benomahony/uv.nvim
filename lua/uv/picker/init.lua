@@ -4,6 +4,7 @@
 local config = require("uv.picker.config")
 local snacks = require("uv.picker.snacks")
 local telescope = require("uv.picker.telescope")
+local fzf_lua = require("uv.picker.fzf-lua")
 
 local M = {}
 
@@ -58,7 +59,10 @@ function M.setup(picker_config, callbacks)
 		return M._telescope_pickers ~= nil
 	end
 
-	-- fzf-lua support can be added here in the future
+	if picker == "fzf-lua" then
+		return fzf_lua.setup(callbacks)
+	end
+
 	return false
 end
 
