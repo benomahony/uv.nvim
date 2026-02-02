@@ -21,11 +21,13 @@
 ---@field sync boolean
 ---@field sync_all boolean
 
+---@alias PickerIntegration "auto"|"snacks"|"telescope"|"fzf-lua"|boolean
+
 ---@class UVConfig
 ---@field auto_activate_venv boolean
 ---@field notify_activate_venv boolean
 ---@field auto_commands boolean
----@field picker_integration boolean
+---@field picker_integration PickerIntegration
 ---@field keymaps UVKeymapsConfig|false
 ---@field execution UVExecutionConfig
 
@@ -43,8 +45,9 @@ M.config = {
 	-- Auto commands for directory changes
 	auto_commands = true,
 
-	-- Integration with picker (like Telescope or other UI components)
-	picker_integration = true,
+	-- Picker integration: "auto" | "snacks" | "telescope" | "fzf-lua" | false
+	-- "auto" tries snacks first, then telescope (backwards compatible with true)
+	picker_integration = "auto",
 
 	-- Keymaps to register (set to false to disable)
 	keymaps = {
