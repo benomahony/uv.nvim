@@ -31,7 +31,8 @@ return {
   --   "nvim-telescope/telescope.nvim"
   -- },
   opts = {
-    picker_integration = true,
+    -- Picker integration: "auto" | "snacks" | "telescope" | false
+    picker_integration = "auto",
   },
 }
 ```
@@ -129,13 +130,25 @@ When using `:UVRunFunction` or `<leader>xf`, the plugin:
 3. Creates a proper module import context for the function
 4. Captures and displays return values
 
-### Integration with Snacks.nvim
+### Picker Integration
 
-This plugin integrates with [Snacks.nvim](https://github.com/folke/snacks.nvim) for UI components:
+This plugin supports multiple UI picker integrations. Configure with the `picker_integration` option:
 
-- Command picker
-- Environment management
-- Function selection
+```lua
+require('uv').setup({
+  -- Options: "auto" | "snacks" | "telescope" | false
+  picker_integration = "auto",  -- default
+})
+```
+
+| Value | Description |
+|-------|-------------|
+| `"auto"` | Automatically detect available picker (tries Snacks first, then Telescope) |
+| `"snacks"` | Explicitly use [Snacks.nvim](https://github.com/folke/snacks.nvim) picker |
+| `"telescope"` | Explicitly use [Telescope.nvim](https://github.com/nvim-telescope/telescope.nvim) picker |
+| `false` | Disable picker integration |
+
+**Note:** `true` is still supported for backwards compatibility (treated as `"auto"`).
 
 ## API
 
@@ -271,8 +284,9 @@ require('uv').setup({
   -- Auto commands for directory changes
   auto_commands = true,
 
-  -- Integration with snacks picker
-  picker_integration = true,
+  -- Picker integration: "auto" | "snacks" | "telescope" | false
+  -- "auto" tries snacks first, then telescope
+  picker_integration = "auto",
 
   -- Keymaps to register (set to false to disable)
   keymaps = {
