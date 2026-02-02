@@ -721,8 +721,8 @@ function M.setup(opts)
 		M.setup_autocommands()
 	end
 
-	-- Set up pickers if integration is enabled
-	if M.config.picker_integration then
+	-- Set up pickers if integration is enabled (false disables, anything else enables)
+	if M.config.picker_integration ~= false then
 		M.setup_pickers()
 	end
 
