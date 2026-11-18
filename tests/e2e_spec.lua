@@ -51,6 +51,22 @@ local function wait_for_output(text)
 	end)
 end
 
+local function require_with_lua_assert(name)
+	local luassert = _G.assert
+	_G.assert = function(...)
+		if not ... then
+			error(select(2, ...) or "assertion failed!", 2)
+		end
+		return ...
+	end
+	local ok, module = pcall(require, name)
+	_G.assert = luassert
+	assert.is_true(ok, tostring(module))
+	return module
+end
+
+local it_needs_nvim_0_10 = vim.fn.has("nvim-0.10") == 1 and it or pending
+
 local function wait_for_project()
 	wait_for("uv init to write pyproject.toml", function()
 		return vim.fn.filereadable("pyproject.toml") == 1
@@ -63,6 +79,10 @@ describe("e2e", function()
 	end)
 
 	after_each(function()
+		while vim.fn.getchar(1) ~= 0 do
+			vim.fn.getchar()
+		end
+		vim.cmd("stopinsert")
 		for _, buf in ipairs(terminal_buffers()) do
 			pcall(vim.api.nvim_buf_delete, buf, { force = true })
 		end
@@ -147,7 +167,7 @@ describe("e2e", function()
 			wait_for_project()
 		end)
 
-		it("runs uv init chosen in snacks", function()
+		it_needs_nvim_0_10("runs uv init chosen in snacks, whose picker uses vim.uv from Neovim 0.10", function()
 			in_new_project()
 			require("snacks")
 			setup("snacks")
@@ -163,6 +183,7 @@ describe("e2e", function()
 		it("runs uv init typed into fzf", function()
 			assert.are.equal(1, vim.fn.executable("fzf"), "fzf must be on PATH to run the fzf-lua e2e test")
 			in_new_project()
+			require_with_lua_assert("fzf-lua")
 			setup("fzf-lua").pick_uv_commands()
 			local fzf_buf
 			wait_for("fzf to list the commands", function()
