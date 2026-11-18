@@ -9,7 +9,7 @@ A Neovim plugin providing integration with the [uv](https://github.com/astral-sh
 - Run specific functions with automatic module imports
 - Manage Python packages with uv commands
 - Automatically activate virtual environments
-- Integration with UI pickers (like Telescope and Snacks.nvim)
+- Integration with UI pickers (Snacks.nvim, Telescope, fzf-lua or anything behind `vim.ui.select`)
 
 ## Demo
 
@@ -61,7 +61,7 @@ You can customize any part of the configuration to fit your workflow.
 
 - Neovim 0.7.0 or later
 - [uv](https://github.com/astral-sh/uv) installed on your system
-- For UI picker integration, a compatible UI picker (like [Snacks.nvim](https://github.com/folke/snacks.nvim) or [Telescope.nvim](https://github.com/nvim-telescope/telescope.nvim))
+- For UI picker integration, a compatible UI picker (like [Snacks.nvim](https://github.com/folke/snacks.nvim), [Telescope.nvim](https://github.com/nvim-telescope/telescope.nvim) or [fzf-lua](https://github.com/ibhagwan/fzf-lua))
 
 ## Usage
 
@@ -271,7 +271,8 @@ require('uv').setup({
   -- Auto commands for directory changes
   auto_commands = true,
 
-  -- Picker integration: true (auto detect, telescope keymaps win if both are installed), false, "snacks" or "telescope"
+  -- Picker integration: true (auto detect telescope, snacks, then fzf-lua), false,
+  -- "snacks", "telescope", "fzf-lua" or "select" (vim.ui.select, e.g. mini.pick or dressing)
   picker_integration = true,
 
   -- Keymaps to register (set to false to disable)

@@ -25,7 +25,7 @@
 ---@field auto_activate_venv boolean
 ---@field notify_activate_venv boolean
 ---@field auto_commands boolean
----@field picker_integration boolean|"snacks"|"telescope"
+---@field picker_integration boolean|"snacks"|"telescope"|"fzf-lua"|"select"
 ---@field keymaps UVKeymapsConfig|false
 ---@field execution UVExecutionConfig
 
@@ -43,7 +43,7 @@ M.config = {
 	-- Auto commands for directory changes
 	auto_commands = true,
 
-	-- Integration with picker: true (auto detect), false, "snacks" or "telescope"
+	-- Integration with picker: true (auto detect), false, "snacks", "telescope", "fzf-lua" or "select" (vim.ui.select)
 	picker_integration = true,
 
 	-- Keymaps to register (set to false to disable)
@@ -513,7 +513,7 @@ function M.run_file()
 	end
 end
 
----@return "snacks"|"telescope"|nil
+---@return "snacks"|"telescope"|"fzf-lua"|"select"|nil
 local function get_picker()
 	local choice = M.config.picker_integration
 	if choice == "telescope" or (choice == true and pcall(require, "telescope")) then
@@ -521,6 +521,12 @@ local function get_picker()
 	end
 	if choice == "snacks" or (choice == true and _G.Snacks and _G.Snacks.picker) then
 		return "snacks"
+	end
+	if choice == "fzf-lua" or (choice == true and pcall(require, "fzf-lua")) then
+		return "fzf-lua"
+	end
+	if choice == "select" then
+		return "select"
 	end
 end
 
@@ -789,6 +795,92 @@ function M.setup_pickers()
 				:find()
 		end
 	end
+
+	local picker = get_picker()
+	if picker == "fzf-lua" or picker == "select" then
+		local function pick(items, prompt, format, on_choice)
+			if picker == "select" then
+				vim.ui.select(items, { prompt = prompt, format_item = format }, function(item)
+					if item then
+						on_choice(item)
+					end
+				end)
+				return
+			end
+			local labels, by_label = {}, {}
+			for _, item in ipairs(items) do
+				table.insert(labels, format(item))
+				by_label[format(item)] = item
+			end
+			require("fzf-lua").fzf_exec(labels, {
+				prompt = prompt .. "> ",
+				actions = {
+					default = function(selected)
+						if selected and by_label[selected[1]] then
+							on_choice(by_label[selected[1]])
+						end
+					end,
+				},
+			})
+		end
+
+		function M.pick_uv_commands()
+			local items = {
+				{ text = "Run current file", action = M.run_file },
+				{ text = "Run selection", action = M.run_python_selection },
+				{ text = "Run function", action = M.run_python_function },
+				{ text = "uv add [package]" },
+				{ text = "uv sync" },
+				{ text = "uv sync --all-extras --all-packages --all-groups" },
+				{ text = "uv remove [package]" },
+				{ text = "uv init" },
+			}
+			pick(items, "UV Commands", function(item)
+				return item.text
+			end, function(item)
+				if item.action then
+					item.action()
+					return
+				end
+				local param_name = item.text:match("%[(.-)%]")
+				if not param_name then
+					M.run_command(item.text)
+					return
+				end
+				vim.ui.input({ prompt = "Enter " .. param_name .. ": " }, function(input)
+					if not input or input == "" then
+						vim.notify("Cancelled", vim.log.levels.INFO)
+						return
+					end
+					M.run_command((item.text:gsub("%[" .. param_name .. "%]", input)))
+				end)
+			end)
+		end
+
+		function M.pick_uv_venv()
+			local items = {}
+			if vim.fn.isdirectory(".venv") == 1 then
+				table.insert(items, {
+					text = ".venv",
+					path = vim.fn.getcwd() .. "/.venv",
+					is_current = vim.env.VIRTUAL_ENV and vim.env.VIRTUAL_ENV:match(".venv$") ~= nil,
+				})
+			end
+			if #items == 0 then
+				table.insert(items, { text = "Create new virtual environment (uv venv)", is_create = true })
+			end
+			pick(items, "UV Virtual Environments", function(item)
+				return item.is_create and "+ " .. item.text
+					or ((item.is_current and "● " or "○ ") .. item.text .. " (Activate)")
+			end, function(item)
+				if item.is_create then
+					M.run_command("uv venv")
+				else
+					M.activate_venv(item.path)
+				end
+			end)
+		end
+	end
 end
 
 -- Set up user commands
@@ -835,10 +927,11 @@ function M.setup_keymaps()
 	end
 
 	local prefix = keymaps.prefix or "<leader>x"
+	local picker = get_picker()
 
 	-- Main UV command menu
 	if keymaps.commands then
-		if get_picker() == "snacks" then
+		if picker == "snacks" then
 			vim.api.nvim_set_keymap(
 				"n",
 				prefix,
@@ -852,18 +945,18 @@ function M.setup_keymaps()
 				{ noremap = true, silent = true, desc = "UV Commands" }
 			)
 		end
-		if get_picker() == "telescope" then
+		if picker and picker ~= "snacks" then
 			vim.api.nvim_set_keymap(
 				"n",
 				prefix,
 				"<cmd>lua require('uv').pick_uv_commands()<CR>",
-				{ noremap = true, silent = true, desc = "UV Commands (Telescope)" }
+				{ noremap = true, silent = true, desc = "UV Commands" }
 			)
 			vim.api.nvim_set_keymap(
 				"v",
 				prefix,
 				":<C-u>lua require('uv').pick_uv_commands()<CR>",
-				{ noremap = true, silent = true, desc = "UV Commands (Telescope)" }
+				{ noremap = true, silent = true, desc = "UV Commands" }
 			)
 		end
 	end
@@ -900,7 +993,7 @@ function M.setup_keymaps()
 
 	-- Environment management
 	if keymaps.venv then
-		if get_picker() == "snacks" then
+		if picker == "snacks" then
 			vim.api.nvim_set_keymap(
 				"n",
 				prefix .. "e",
@@ -908,12 +1001,12 @@ function M.setup_keymaps()
 				{ noremap = true, silent = true, desc = "UV Environment" }
 			)
 		end
-		if get_picker() == "telescope" then
+		if picker and picker ~= "snacks" then
 			vim.api.nvim_set_keymap(
 				"n",
 				prefix .. "e",
 				"<cmd>lua require('uv').pick_uv_venv()<CR>",
-				{ noremap = true, silent = true, desc = "UV Environment (Telescope)" }
+				{ noremap = true, silent = true, desc = "UV Environment" }
 			)
 		end
 	end

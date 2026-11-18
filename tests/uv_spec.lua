@@ -149,6 +149,43 @@ describe("uv.nvim", function()
 			assert.is_nil(sources.uv_commands)
 		end)
 
+		it("uses vim.ui.select when configured", function()
+			local original_select = vim.ui.select
+			local labels, ran = {}, nil
+			vim.ui.select = function(items, opts, on_choice)
+				for _, item in ipairs(items) do
+					table.insert(labels, opts.format_item(item))
+				end
+				on_choice(items[5])
+			end
+			assert.truthy(commands_keymap("select"):find("pick_uv_commands", 1, true))
+			local m = require("uv")
+			m.run_command = function(cmd)
+				ran = cmd
+			end
+			m.pick_uv_commands()
+			vim.ui.select = original_select
+			assert.are.equal("Run current file", labels[1])
+			assert.are.equal("uv sync", ran)
+		end)
+
+		it("uses fzf-lua when configured", function()
+			local ran = nil
+			package.loaded["fzf-lua"] = {
+				fzf_exec = function(_, opts)
+					opts.actions.default({ "uv init" })
+				end,
+			}
+			assert.truthy(commands_keymap("fzf-lua"):find("pick_uv_commands", 1, true))
+			local m = require("uv")
+			m.run_command = function(cmd)
+				ran = cmd
+			end
+			m.pick_uv_commands()
+			package.loaded["fzf-lua"] = nil
+			assert.are.equal("uv init", ran)
+		end)
+
 		it("sets no picker keymap when disabled", function()
 			assert.are.equal("", commands_keymap(false))
 		end)
