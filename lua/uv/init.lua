@@ -243,6 +243,7 @@ end
 
 local selection_prelude = [=[
 import ast as _ast
+import sys as _sys
 import textwrap as _textwrap
 
 
@@ -250,7 +251,11 @@ def _uv_load_context(path, start, end):
     source = open(path).read()
     try:
         tree = _ast.parse(source)
-    except SyntaxError:
+    except SyntaxError as error:
+        print(
+            f"uv.nvim: buffer has a syntax error on line {error.lineno}: {error.msg}, running selection without file context",
+            file=_sys.stderr,
+        )
         return
     snippet = _textwrap.dedent("\n".join(source.splitlines()[start - 1 : end]))
     try:
