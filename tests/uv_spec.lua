@@ -136,4 +136,42 @@ describe("uv.nvim", function()
 			assert.is_nil(("Run selection"):match(pattern))
 		end)
 	end)
+
+	describe("run_python_selection", function()
+		local cache_file = vim.fn.expand("$HOME") .. "/.cache/nvim/uv_run/run_selection.py"
+
+		local function run_selection_on(line)
+			vim.api.nvim_feedkeys(line .. "GV\\t", "x", false)
+			vim.cmd("close")
+			return table.concat(vim.fn.readfile(cache_file), "\n")
+		end
+
+		before_each(function()
+			local m = fresh_uv()
+			m.config.execution.run_command = "true"
+			vim.keymap.set("v", "\\t", m.run_python_selection)
+			vim.cmd("enew")
+			vim.api.nvim_buf_set_lines(0, 0, -1, false, {
+				"def get_name() -> str:",
+				'    return "Andreas"',
+				"",
+				"",
+				"def print_hello():",
+				'    print(f"Hello, {get_name()}")',
+			})
+		end)
+
+		after_each(function()
+			vim.keymap.del("v", "\\t")
+		end)
+
+		it("uses the current selection when called from visual mode", function()
+			assert.truthy(run_selection_on(2):find('def run_selection():\n        return "Andreas"', 1, true))
+			assert.truthy(run_selection_on(6):find('def run_selection():\n        print(f"Hello', 1, true))
+		end)
+
+		it("includes local function definitions", function()
+			assert.truthy(run_selection_on(6):find("def get_name() -> str:", 1, true))
+		end)
+	end)
 end)

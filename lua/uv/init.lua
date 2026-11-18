@@ -246,6 +246,9 @@ function M.run_python_selection()
 	-- Get visual selection
 	---@return string
 	local function get_visual_selection()
+		if vim.fn.mode():match("^[vV\22]") then
+			vim.cmd("normal! \27")
+		end
 		local start_pos = vim.fn.getpos("'<")
 		local end_pos = vim.fn.getpos("'>")
 		local lines = vim.fn.getline(start_pos[2], end_pos[2])
@@ -268,15 +271,26 @@ function M.run_python_selection()
 	end
 
 	-- Get current buffer content to extract imports and global variables
-	---@return string[], string[]
+	---@return string[], string[], string[]
 	local function get_buffer_globals()
 		local lines = vim.api.nvim_buf_get_lines(0, 0, -1, false)
 		local imports = {}
 		local globals = {}
+		local definitions = {}
+		local in_definition = false
 		local in_class = false
 		local class_indent = 0
 
 		for _, line in ipairs(lines) do
+			if line:match("^def ") or line:match("^async def ") or line:match("^class ") or line:match("^@") then
+				in_definition = true
+			elseif line:match("^[^%s#%)%]}]") then
+				in_definition = false
+			end
+			if in_definition then
+				table.insert(definitions, line)
+			end
+
 			-- Detect imports
 			if line:match("^%s*import ") or line:match("^%s*from .+ import") then
 				table.insert(imports, line)
@@ -305,7 +319,7 @@ function M.run_python_selection()
 			end
 		end
 
-		return imports, globals
+		return imports, globals, definitions
 	end
 
 	-- Get selected code
@@ -316,7 +330,7 @@ function M.run_python_selection()
 	end
 
 	-- Get imports and globals
-	local imports, globals = get_buffer_globals()
+	local imports, globals, definitions = get_buffer_globals()
 
 	-- Create temp file
 	local temp_dir = vim.fn.expand("$HOME") .. "/.cache/nvim/uv_run"
@@ -337,6 +351,11 @@ function M.run_python_selection()
 	-- Write globals
 	for _, glob in ipairs(globals) do
 		file:write(glob .. "\n")
+	end
+	file:write("\n")
+
+	for _, def in ipairs(definitions) do
+		file:write(def .. "\n")
 	end
 	file:write("\n")
 
