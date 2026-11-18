@@ -123,67 +123,85 @@ describe("uv.nvim", function()
 	end)
 
 	describe("picker_integration", function()
-		local sources
+		local original_select = vim.ui.select
+		local original_input = vim.ui.input
+		local sources, ran
 
 		local function commands_keymap(picker_integration)
 			sources = {}
 			_G.Snacks = { picker = { sources = sources, preview = {} } }
 			local m = fresh_uv()
 			m.setup({ auto_commands = false, picker_integration = picker_integration })
-			local rhs = vim.fn.maparg("<leader>x", "n")
-			_G.Snacks = nil
-			return rhs
+			m.run_command = function(cmd)
+				ran = cmd
+			end
+			return vim.fn.maparg("<leader>x", "n")
+		end
+
+		local function choose(index)
+			vim.ui.select = function(items, _, on_choice)
+				on_choice(items[index])
+			end
 		end
 
 		after_each(function()
+			_G.Snacks = nil
+			vim.ui.select = original_select
+			vim.ui.input = original_input
+			package.loaded["fzf-lua"] = nil
+			ran = nil
 			pcall(vim.keymap.del, "n", "<leader>x")
 		end)
 
 		it("auto detects snacks and registers its sources", function()
-			assert.truthy(commands_keymap(true):find("Snacks.picker.pick", 1, true))
+			assert.matches("Snacks.picker.pick", commands_keymap(true), nil, true)
 			assert.is_not_nil(sources.uv_commands)
 		end)
 
+		it("runs the command confirmed in the snacks picker", function()
+			commands_keymap(true)
+			sources.uv_commands.confirm({ close = function() end }, sources.uv_commands.finder()[5])
+			assert.are.equal("uv sync", ran)
+		end)
+
 		it("uses only telescope when configured even if snacks is available", function()
-			assert.truthy(commands_keymap("telescope"):find("pick_uv_commands", 1, true))
+			assert.matches("pick_uv_commands", commands_keymap("telescope"), nil, true)
 			assert.is_nil(sources.uv_commands)
 		end)
 
-		it("uses vim.ui.select when configured", function()
-			local original_select = vim.ui.select
-			local labels, ran = {}, nil
+		it("lists commands and runs the one chosen through vim.ui.select", function()
+			local labels = {}
 			vim.ui.select = function(items, opts, on_choice)
 				for _, item in ipairs(items) do
 					table.insert(labels, opts.format_item(item))
 				end
 				on_choice(items[5])
 			end
-			assert.truthy(commands_keymap("select"):find("pick_uv_commands", 1, true))
-			local m = require("uv")
-			m.run_command = function(cmd)
-				ran = cmd
-			end
-			m.pick_uv_commands()
-			vim.ui.select = original_select
+			assert.matches("pick_uv_commands", commands_keymap("select"), nil, true)
+			require("uv").pick_uv_commands()
 			assert.are.equal("Run current file", labels[1])
 			assert.are.equal("uv sync", ran)
 		end)
 
-		it("uses fzf-lua when configured", function()
-			local ran = nil
+		it("runs the command chosen through fzf-lua", function()
 			package.loaded["fzf-lua"] = {
 				fzf_exec = function(_, opts)
 					opts.actions.default({ "uv init" })
 				end,
 			}
-			assert.truthy(commands_keymap("fzf-lua"):find("pick_uv_commands", 1, true))
-			local m = require("uv")
-			m.run_command = function(cmd)
-				ran = cmd
-			end
-			m.pick_uv_commands()
-			package.loaded["fzf-lua"] = nil
+			assert.matches("pick_uv_commands", commands_keymap("fzf-lua"), nil, true)
+			require("uv").pick_uv_commands()
 			assert.are.equal("uv init", ran)
+		end)
+
+		it("shell escapes the package typed into the picker", function()
+			choose(4)
+			vim.ui.input = function(_, on_confirm)
+				on_confirm("requests; rm -rf ~")
+			end
+			commands_keymap("select")
+			require("uv").pick_uv_commands()
+			assert.are.equal("uv add 'requests;' 'rm' '-rf' '~'", ran)
 		end)
 
 		it("sets no picker keymap when disabled", function()
@@ -237,8 +255,8 @@ describe("uv.nvim", function()
 		end)
 
 		it("uses the current selection when called from visual mode", function()
-			assert.truthy(run_selection_on(2):find('def run_selection():\n        return "Andreas"', 1, true))
-			assert.truthy(run_selection_on(6):find('def run_selection():\n        print(f"Hello', 1, true))
+			assert.matches('def run_selection():\n        return "Andreas"', run_selection_on(2), nil, true)
+			assert.matches('def run_selection():\n        print(f"Hello', run_selection_on(6), nil, true)
 		end)
 
 		it("runs with only the definitions it references", function()
@@ -250,8 +268,8 @@ describe("uv.nvim", function()
 			vim.api.nvim_buf_set_lines(0, 0, -1, false, { "def broken(:", 'print("ran")' })
 			run_selection_on(2)
 			local output = vim.fn.system({ "python3", cache_file })
-			assert.truthy(output:find("syntax error on line 1", 1, true))
-			assert.truthy(output:find("ran\n", 1, true))
+			assert.matches("syntax error on line 1", output, nil, true)
+			assert.matches("ran\n", output, nil, true)
 		end)
 	end)
 end)

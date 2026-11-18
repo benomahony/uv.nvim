@@ -88,7 +88,7 @@ function M.run_command(cmd)
 			if exit_code == 0 then
 				vim.notify("Command completed successfully: " .. cmd, vim.log.levels.INFO)
 			else
-				vim.notify("Command failed: " .. cmd, vim.log.levels.ERROR)
+				vim.notify("Command failed with exit code " .. exit_code .. ": " .. cmd, vim.log.levels.ERROR)
 			end
 		end,
 		on_stdout = function(_, data)
@@ -229,6 +229,16 @@ end
 
 -- Internal: open a terminal according to execution.terminal (no helper exported)
 ---@param cmd string
+---@param input string
+---@return string
+local function shell_args(input)
+	local args = {}
+	for arg in input:gmatch("%S+") do
+		table.insert(args, vim.fn.shellescape(arg))
+	end
+	return table.concat(args, " ")
+end
+
 local function open_term(cmd)
 	local where = M.config.execution.terminal or "vsplit"
 	if where == "split" then
@@ -334,9 +344,9 @@ function M.run_python_selection()
 	local temp_dir = vim.fn.expand("$HOME") .. "/.cache/nvim/uv_run"
 	vim.fn.mkdir(temp_dir, "p")
 	local temp_file = temp_dir .. "/run_selection.py"
-	local file = io.open(temp_file, "w")
+	local file, err = io.open(temp_file, "w")
 	if not file then
-		vim.notify("Failed to create temporary file", vim.log.levels.ERROR)
+		vim.notify("Failed to create temporary file " .. temp_file .. ": " .. err, vim.log.levels.ERROR)
 		return
 	end
 
@@ -421,7 +431,16 @@ function M.remove_package()
 		prompt = "Select package to remove:",
 	}, function(choice)
 		if choice then
-			M.run_command("uv remove " .. choice)
+			M.run_command("uv remove " .. vim.fn.shellescape(choice))
+		end
+	end)
+end
+
+-- Function prompting for a package to add
+function M.add_package()
+	vim.ui.input({ prompt = "Enter package name: " }, function(input)
+		if input and input ~= "" then
+			M.run_command("uv add " .. shell_args(input))
 		end
 	end)
 end
@@ -455,9 +474,9 @@ function M.run_python_function()
 		local temp_file = temp_dir .. "/run_function.py"
 		local current_file = vim.fn.expand("%:p")
 
-		local file = io.open(temp_file, "w")
+		local file, err = io.open(temp_file, "w")
 		if not file then
-			vim.notify("Failed to create temporary file", vim.log.levels.ERROR)
+			vim.notify("Failed to create temporary file " .. temp_file .. ": " .. err, vim.log.levels.ERROR)
 			return
 		end
 
@@ -530,356 +549,225 @@ local function get_picker()
 	end
 end
 
+local function run_selection_from_picker()
+	local mode = vim.fn.mode()
+	if mode == "v" or mode == "V" or mode == "\22" then
+		vim.cmd("normal! \27")
+		vim.defer_fn(function()
+			M.run_python_selection()
+		end, 100)
+		return
+	end
+	vim.notify("Please select text first. Enter visual mode (v) and select code to run.", vim.log.levels.INFO)
+	vim.api.nvim_create_autocmd("ModeChanged", {
+		pattern = "[vV\x16]*:n",
+		callback = function()
+			M.run_python_selection()
+			return true
+		end,
+		once = true,
+	})
+end
+
+---@return { text: string, desc: string, action: fun()? }[]
+local function command_items()
+	return {
+		{ text = "Run current file", desc = "Run current file with Python", action = M.run_file },
+		{ text = "Run selection", desc = "Run selected Python code", action = run_selection_from_picker },
+		{ text = "Run function", desc = "Run specific Python function", action = M.run_python_function },
+		{ text = "uv add [package]", desc = "Install a package" },
+		{ text = "uv sync", desc = "Sync packages from lockfile" },
+		{ text = "uv sync --all-extras --all-packages --all-groups", desc = "Sync all extras, groups and packages" },
+		{ text = "uv remove [package]", desc = "Remove a package" },
+		{ text = "uv init", desc = "Initialize a new project" },
+	}
+end
+
+---@param item { text: string, action: fun()? }
+local function run_command_item(item)
+	if item.action then
+		item.action()
+		return
+	end
+	local param_name = item.text:match("%[(.-)%]")
+	if not param_name then
+		M.run_command(item.text)
+		return
+	end
+	vim.ui.input({ prompt = "Enter " .. param_name .. ": " }, function(input)
+		if not input or input == "" then
+			vim.notify("Cancelled", vim.log.levels.INFO)
+			return
+		end
+		M.run_command((item.text:gsub("%[.-%]", function()
+			return shell_args(input)
+		end)))
+	end)
+end
+
+---@return { text: string, path: string?, is_current: boolean?, is_create: boolean? }[]
+local function venv_items()
+	if vim.fn.isdirectory(".venv") == 1 then
+		return {
+			{
+				text = ".venv",
+				path = vim.fn.getcwd() .. "/.venv",
+				is_current = vim.env.VIRTUAL_ENV and vim.env.VIRTUAL_ENV:match(".venv$") ~= nil,
+			},
+		}
+	end
+	return { { text = "Create new virtual environment (uv venv)", is_create = true } }
+end
+
+---@param item { text: string, is_current: boolean?, is_create: boolean? }
+---@return string
+local function format_venv_item(item)
+	if item.is_create then
+		return "+ " .. item.text
+	end
+	return (item.is_current and "● " or "○ ") .. item.text .. " (Activate)"
+end
+
+---@param item { path: string?, is_create: boolean? }
+local function run_venv_item(item)
+	if item.is_create then
+		M.run_command("uv venv")
+	else
+		M.activate_venv(item.path)
+	end
+end
+
+local function setup_snacks_picker()
+	Snacks.picker.sources.uv_commands = {
+		finder = command_items,
+		preview = function(ctx)
+			local cmd = ctx.item.text:match("^(uv %a+)")
+			if cmd then
+				Snacks.picker.preview.cmd(cmd .. " --help", ctx)
+			else
+				ctx.preview:set_lines({})
+			end
+		end,
+		format = function(item)
+			return { { item.text .. " - " .. item.desc } }
+		end,
+		confirm = function(picker, item)
+			if item then
+				picker:close()
+				run_command_item(item)
+			end
+		end,
+	}
+
+	Snacks.picker.sources.uv_venv = {
+		finder = venv_items,
+		format = function(item)
+			return { { format_venv_item(item) } }
+		end,
+		confirm = function(picker, item)
+			picker:close()
+			if item then
+				run_venv_item(item)
+			end
+		end,
+	}
+end
+
+local function setup_telescope_picker()
+	local pickers = require("telescope.pickers")
+	local finders = require("telescope.finders")
+	local sorters = require("telescope.sorters")
+	local actions = require("telescope.actions")
+	local action_state = require("telescope.actions.state")
+
+	local function pick(title, items, format, on_choice)
+		pickers
+			.new({}, {
+				prompt_title = title,
+				finder = finders.new_table({
+					results = items,
+					entry_maker = function(entry)
+						return { value = entry, display = format(entry), ordinal = format(entry) }
+					end,
+				}),
+				sorter = sorters.get_generic_fuzzy_sorter(),
+				attach_mappings = function(prompt_bufnr, map)
+					local function on_select()
+						local selection = action_state.get_selected_entry().value
+						actions.close(prompt_bufnr)
+						on_choice(selection)
+					end
+
+					map("i", "<CR>", on_select)
+					map("n", "<CR>", on_select)
+					return true
+				end,
+			})
+			:find()
+	end
+
+	function M.pick_uv_commands()
+		pick("UV Commands", command_items(), function(item)
+			return item.text
+		end, run_command_item)
+	end
+
+	function M.pick_uv_venv()
+		pick("UV Virtual Environments", venv_items(), format_venv_item, run_venv_item)
+	end
+end
+
+---@param picker "fzf-lua"|"select"
+local function setup_select_picker(picker)
+	local function pick(title, items, format, on_choice)
+		if picker == "select" then
+			vim.ui.select(items, { prompt = title, format_item = format }, function(item)
+				if item then
+					on_choice(item)
+				end
+			end)
+			return
+		end
+		local labels, by_label = {}, {}
+		for _, item in ipairs(items) do
+			table.insert(labels, format(item))
+			by_label[format(item)] = item
+		end
+		require("fzf-lua").fzf_exec(labels, {
+			prompt = title .. "> ",
+			actions = {
+				default = function(selected)
+					if selected and by_label[selected[1]] then
+						on_choice(by_label[selected[1]])
+					end
+				end,
+			},
+		})
+	end
+
+	function M.pick_uv_commands()
+		pick("UV Commands", command_items(), function(item)
+			return item.text
+		end, run_command_item)
+	end
+
+	function M.pick_uv_venv()
+		pick("UV Virtual Environments", venv_items(), format_venv_item, run_venv_item)
+	end
+end
+
 -- Set up command pickers for integration with UI plugins
 function M.setup_pickers()
 	local choice = M.config.picker_integration
-	-- Snacks
 	if (choice == true or choice == "snacks") and _G.Snacks and _G.Snacks.picker then
-		Snacks.picker.sources.uv_commands = {
-			finder = function()
-				return {
-					{ text = "Run current file", desc = "Run current file with Python", is_run_current = true },
-					{ text = "Run selection", desc = "Run selected Python code", is_run_selection = true },
-					{ text = "Run function", desc = "Run specific Python function", is_run_function = true },
-					{ text = "uv add [package]", desc = "Install a package" },
-					{ text = "uv sync", desc = "Sync packages from lockfile" },
-					{
-						text = "uv sync --all-extras --all-packages --all-groups",
-						desc = "Sync all extras, groups and packages",
-					},
-					{ text = "uv remove [package]", desc = "Remove a package" },
-					{ text = "uv init", desc = "Initialize a new project" },
-				}
-			end,
-			preview = function(ctx)
-				local cmd = ctx.item.text:match("^(uv %a+)")
-				if cmd then
-					Snacks.picker.preview.cmd(cmd .. " --help", ctx)
-				else
-					ctx.preview:set_lines({})
-				end
-			end,
-			format = function(item)
-				return { { item.text .. " - " .. item.desc } }
-			end,
-			confirm = function(picker, item)
-				if item then
-					picker:close()
-					if item.is_run_current then
-						M.run_file()
-						return
-					elseif item.is_run_selection then
-						local mode = vim.fn.mode()
-						if mode == "v" or mode == "V" or mode == "" then
-							vim.cmd("normal! \27")
-							vim.defer_fn(function()
-								M.run_python_selection()
-							end, 100)
-						else
-							vim.notify(
-								"Please select text first. Enter visual mode (v) and select code to run.",
-								vim.log.levels.INFO
-							)
-							vim.api.nvim_create_autocmd("ModeChanged", {
-								pattern = "[vV\x16]*:n",
-								callback = function(_)
-									M.run_python_selection()
-									return true
-								end,
-								once = true,
-							})
-						end
-						return
-					elseif item.is_run_function then
-						M.run_python_function()
-						return
-					end
-
-					local cmd = item.text
-					if cmd:match("%[(.-)%]") then
-						local param_name = cmd:match("%[(.-)%]")
-						vim.ui.input({ prompt = "Enter " .. param_name .. ": " }, function(input)
-							if not input or input == "" then
-								vim.notify("Cancelled", vim.log.levels.INFO)
-								return
-							end
-							local actual_cmd = cmd:gsub("%[" .. param_name .. "%]", input)
-							M.run_command(actual_cmd)
-						end)
-					else
-						M.run_command(cmd)
-					end
-				end
-			end,
-		}
-
-		Snacks.picker.sources.uv_venv = {
-			finder = function()
-				local venvs = {}
-				if vim.fn.isdirectory(".venv") == 1 then
-					table.insert(venvs, {
-						text = ".venv",
-						path = vim.fn.getcwd() .. "/.venv",
-						is_current = vim.env.VIRTUAL_ENV and vim.env.VIRTUAL_ENV:match(".venv$") ~= nil,
-					})
-				end
-				if #venvs == 0 then
-					table.insert(venvs, {
-						text = "Create new virtual environment (uv venv)",
-						is_create = true,
-					})
-				end
-				return venvs
-			end,
-			format = function(item)
-				if item.is_create then
-					return { { "+ " .. item.text } }
-				else
-					local icon = item.is_current and "● " or "○ "
-					return { { icon .. item.text .. " (Activate)" } }
-				end
-			end,
-			confirm = function(picker, item)
-				picker:close()
-				if item then
-					if item.is_create then
-						M.run_command("uv venv")
-					else
-						M.activate_venv(item.path)
-					end
-				end
-			end,
-		}
+		setup_snacks_picker()
 	end
-
-	-- Telescope
-	local has_telescope, telescope = pcall(require, "telescope")
-	if (choice == true or choice == "telescope") and has_telescope and telescope then
-		local pickers = require("telescope.pickers")
-		local finders = require("telescope.finders")
-		local sorters = require("telescope.sorters")
-		local actions = require("telescope.actions")
-		local action_state = require("telescope.actions.state")
-
-		function M.pick_uv_commands()
-			local items = {
-				{ text = "Run current file", is_run_current = true },
-				{ text = "Run selection", is_run_selection = true },
-				{ text = "Run function", is_run_function = true },
-				{ text = "uv add [package]", cmd = "uv add ", needs_input = true },
-				{ text = "uv sync", cmd = "uv sync" },
-				{
-					text = "uv sync --all-extras --all-packages --all-groups",
-					cmd = "uv sync --all-extras --all-packages --all-groups",
-				},
-				{ text = "uv remove [package]", cmd = "uv remove ", needs_input = true },
-				{ text = "uv init", cmd = "uv init" },
-			}
-
-			pickers
-				.new({}, {
-					prompt_title = "UV Commands",
-					finder = finders.new_table({
-						results = items,
-						entry_maker = function(entry)
-							return {
-								value = entry,
-								display = entry.text,
-								ordinal = entry.text,
-							}
-						end,
-					}),
-					sorter = sorters.get_generic_fuzzy_sorter(),
-					attach_mappings = function(prompt_bufnr, map)
-						local function on_select()
-							local selection = action_state.get_selected_entry().value
-							actions.close(prompt_bufnr)
-							if selection.is_run_current then
-								M.run_file()
-							elseif selection.is_run_selection then
-								local mode = vim.fn.mode()
-								if mode == "v" or mode == "V" or mode == "" then
-									vim.cmd("normal! \27")
-									vim.defer_fn(function()
-										M.run_python_selection()
-									end, 100)
-								else
-									vim.notify(
-										"Please select text first. Enter visual mode (v) and select code to run.",
-										vim.log.levels.INFO
-									)
-									vim.api.nvim_create_autocmd("ModeChanged", {
-										pattern = "[vV\x16]*:n",
-										callback = function()
-											M.run_python_selection()
-											return true
-										end,
-										once = true,
-									})
-								end
-							elseif selection.is_run_function then
-								M.run_python_function()
-							else
-								if selection.needs_input then
-									local placeholder = selection.text:match("%[(.-)%]")
-									vim.ui.input(
-										{ prompt = "Enter " .. (placeholder or "value") .. ": " },
-										function(input)
-											if input and input ~= "" then
-												local cmd = selection.cmd .. input
-												M.run_command(cmd)
-											else
-												vim.notify("Cancelled", vim.log.levels.INFO)
-											end
-										end
-									)
-								else
-									M.run_command(selection.cmd)
-								end
-							end
-						end
-
-						map("i", "<CR>", on_select)
-						map("n", "<CR>", on_select)
-						return true
-					end,
-				})
-				:find()
-		end
-
-		function M.pick_uv_venv()
-			local items = {}
-			if vim.fn.isdirectory(".venv") == 1 then
-				table.insert(items, {
-					text = ".venv",
-					path = vim.fn.getcwd() .. "/.venv",
-					is_current = vim.env.VIRTUAL_ENV and vim.env.VIRTUAL_ENV:match(".venv$") ~= nil,
-				})
-			end
-			if #items == 0 then
-				table.insert(items, { text = "Create new virtual environment (uv venv)", is_create = true })
-			end
-
-			pickers
-				.new({}, {
-					prompt_title = "UV Virtual Environments",
-					finder = finders.new_table({
-						results = items,
-						entry_maker = function(entry)
-							local display = entry.is_create and "+ " .. entry.text
-								or ((entry.is_current and "● " or "○ ") .. entry.text .. " (Activate)")
-							return {
-								value = entry,
-								display = display,
-								ordinal = display,
-							}
-						end,
-					}),
-					sorter = sorters.get_generic_fuzzy_sorter(),
-					attach_mappings = function(prompt_bufnr, map)
-						local function on_select()
-							local selection = action_state.get_selected_entry().value
-							actions.close(prompt_bufnr)
-							if selection.is_create then
-								M.run_command("uv venv")
-							else
-								M.activate_venv(selection.path)
-							end
-						end
-
-						map("i", "<CR>", on_select)
-						map("n", "<CR>", on_select)
-						return true
-					end,
-				})
-				:find()
-		end
+	if (choice == true or choice == "telescope") and pcall(require, "telescope") then
+		setup_telescope_picker()
 	end
-
 	local picker = get_picker()
 	if picker == "fzf-lua" or picker == "select" then
-		local function pick(items, prompt, format, on_choice)
-			if picker == "select" then
-				vim.ui.select(items, { prompt = prompt, format_item = format }, function(item)
-					if item then
-						on_choice(item)
-					end
-				end)
-				return
-			end
-			local labels, by_label = {}, {}
-			for _, item in ipairs(items) do
-				table.insert(labels, format(item))
-				by_label[format(item)] = item
-			end
-			require("fzf-lua").fzf_exec(labels, {
-				prompt = prompt .. "> ",
-				actions = {
-					default = function(selected)
-						if selected and by_label[selected[1]] then
-							on_choice(by_label[selected[1]])
-						end
-					end,
-				},
-			})
-		end
-
-		function M.pick_uv_commands()
-			local items = {
-				{ text = "Run current file", action = M.run_file },
-				{ text = "Run selection", action = M.run_python_selection },
-				{ text = "Run function", action = M.run_python_function },
-				{ text = "uv add [package]" },
-				{ text = "uv sync" },
-				{ text = "uv sync --all-extras --all-packages --all-groups" },
-				{ text = "uv remove [package]" },
-				{ text = "uv init" },
-			}
-			pick(items, "UV Commands", function(item)
-				return item.text
-			end, function(item)
-				if item.action then
-					item.action()
-					return
-				end
-				local param_name = item.text:match("%[(.-)%]")
-				if not param_name then
-					M.run_command(item.text)
-					return
-				end
-				vim.ui.input({ prompt = "Enter " .. param_name .. ": " }, function(input)
-					if not input or input == "" then
-						vim.notify("Cancelled", vim.log.levels.INFO)
-						return
-					end
-					M.run_command((item.text:gsub("%[" .. param_name .. "%]", input)))
-				end)
-			end)
-		end
-
-		function M.pick_uv_venv()
-			local items = {}
-			if vim.fn.isdirectory(".venv") == 1 then
-				table.insert(items, {
-					text = ".venv",
-					path = vim.fn.getcwd() .. "/.venv",
-					is_current = vim.env.VIRTUAL_ENV and vim.env.VIRTUAL_ENV:match(".venv$") ~= nil,
-				})
-			end
-			if #items == 0 then
-				table.insert(items, { text = "Create new virtual environment (uv venv)", is_create = true })
-			end
-			pick(items, "UV Virtual Environments", function(item)
-				return item.is_create and "+ " .. item.text
-					or ((item.is_current and "● " or "○ ") .. item.text .. " (Activate)")
-			end, function(item)
-				if item.is_create then
-					M.run_command("uv venv")
-				else
-					M.activate_venv(item.path)
-				end
-			end)
-		end
+		setup_select_picker(picker)
 	end
 end
 
@@ -902,11 +790,11 @@ function M.setup_commands()
 	end, {})
 
 	vim.api.nvim_create_user_command("UVAddPackage", function(opts)
-		M.run_command("uv add " .. opts.args)
+		M.run_command("uv add " .. shell_args(opts.args))
 	end, { nargs = 1 })
 
 	vim.api.nvim_create_user_command("UVRemovePackage", function(opts)
-		M.run_command("uv remove " .. opts.args)
+		M.run_command("uv remove " .. shell_args(opts.args))
 	end, { nargs = 1 })
 
 	-- Toggle auto-activate venv (granular control)
@@ -1026,7 +914,7 @@ function M.setup_keymaps()
 		vim.api.nvim_set_keymap(
 			"n",
 			prefix .. "a",
-			"<cmd>lua vim.ui.input({prompt = 'Enter package name: '}, function(input) if input and input ~= '' then require('uv').run_command('uv add ' .. input) end end)<CR>",
+			"<cmd>lua require('uv').add_package()<CR>",
 			{ noremap = true, silent = true, desc = "UV Add Package" }
 		)
 	end
