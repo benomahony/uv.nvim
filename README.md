@@ -271,7 +271,7 @@ require('uv').setup({
   -- Auto commands for directory changes
   auto_commands = true,
 
-  -- Picker integration: true (auto detect, prefers snacks), false, "snacks" or "telescope"
+  -- Picker integration: true (auto detect, telescope keymaps win if both are installed), false, "snacks" or "telescope"
   picker_integration = true,
 
   -- Keymaps to register (set to false to disable)

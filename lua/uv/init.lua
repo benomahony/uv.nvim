@@ -516,19 +516,19 @@ end
 ---@return "snacks"|"telescope"|nil
 local function get_picker()
 	local choice = M.config.picker_integration
-	if choice == "snacks" or (choice == true and _G.Snacks and _G.Snacks.picker) then
-		return "snacks"
-	end
 	if choice == "telescope" or (choice == true and pcall(require, "telescope")) then
 		return "telescope"
+	end
+	if choice == "snacks" or (choice == true and _G.Snacks and _G.Snacks.picker) then
+		return "snacks"
 	end
 end
 
 -- Set up command pickers for integration with UI plugins
 function M.setup_pickers()
-	local picker = get_picker()
+	local choice = M.config.picker_integration
 	-- Snacks
-	if picker == "snacks" and _G.Snacks and _G.Snacks.picker then
+	if (choice == true or choice == "snacks") and _G.Snacks and _G.Snacks.picker then
 		Snacks.picker.sources.uv_commands = {
 			finder = function()
 				return {
@@ -648,7 +648,7 @@ function M.setup_pickers()
 
 	-- Telescope
 	local has_telescope, telescope = pcall(require, "telescope")
-	if picker == "telescope" and has_telescope and telescope then
+	if (choice == true or choice == "telescope") and has_telescope and telescope then
 		local pickers = require("telescope.pickers")
 		local finders = require("telescope.finders")
 		local sorters = require("telescope.sorters")

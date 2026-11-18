@@ -123,8 +123,11 @@ describe("uv.nvim", function()
 	end)
 
 	describe("picker_integration", function()
+		local sources
+
 		local function commands_keymap(picker_integration)
-			_G.Snacks = { picker = { sources = {}, preview = {} } }
+			sources = {}
+			_G.Snacks = { picker = { sources = sources, preview = {} } }
 			local m = fresh_uv()
 			m.setup({ auto_commands = false, picker_integration = picker_integration })
 			local rhs = vim.fn.maparg("<leader>x", "n")
@@ -136,12 +139,14 @@ describe("uv.nvim", function()
 			pcall(vim.keymap.del, "n", "<leader>x")
 		end)
 
-		it("prefers snacks when auto detecting", function()
+		it("auto detects snacks and registers its sources", function()
 			assert.truthy(commands_keymap(true):find("Snacks.picker.pick", 1, true))
+			assert.is_not_nil(sources.uv_commands)
 		end)
 
-		it("uses telescope when configured even if snacks is available", function()
+		it("uses only telescope when configured even if snacks is available", function()
 			assert.truthy(commands_keymap("telescope"):find("pick_uv_commands", 1, true))
+			assert.is_nil(sources.uv_commands)
 		end)
 
 		it("sets no picker keymap when disabled", function()
