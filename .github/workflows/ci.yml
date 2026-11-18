@@ -25,10 +25,16 @@ jobs:
           neovim: true
           version: ${{ matrix.neovim }}
 
+      - name: Install uv
+        uses: astral-sh/setup-uv@v6
+
+      - name: Install fzf
+        run: sudo apt-get install -y fzf
+
       - name: Run tests
         run: |
           nvim --version
-          nvim --headless -u tests/minimal_init.lua -c "PlenaryBustedDirectory tests/ {minimal_init = 'tests/minimal_init.lua'}"
+          nvim --headless -u tests/minimal_init.lua -c "PlenaryBustedDirectory tests/ {minimal_init = 'tests/minimal_init.lua', timeout = 180000}"
 
   lint:
     name: Lint

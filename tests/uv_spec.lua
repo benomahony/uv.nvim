@@ -59,6 +59,59 @@ describe("uv.nvim", function()
 			assert.is_not_nil(cmds.UVRunSelection)
 			assert.is_not_nil(cmds.UVRunFunction)
 		end)
+
+		it("shell escapes UVAddPackage and UVRemovePackage arguments", function()
+			local m = fresh_uv()
+			m.setup({ auto_commands = false, keymaps = false, picker_integration = false })
+			local ran = {}
+			m.run_command = function(cmd)
+				table.insert(ran, cmd)
+			end
+			vim.cmd("UVAddPackage pytest --dev")
+			vim.cmd("UVRemovePackage requests")
+			assert.are.same({ "uv add 'pytest' '--dev'", "uv remove 'requests'" }, ran)
+		end)
+	end)
+
+	describe("add_package", function()
+		local original_input = vim.ui.input
+
+		after_each(function()
+			vim.ui.input = original_input
+		end)
+
+		it("shell escapes the package name typed in", function()
+			local m = fresh_uv()
+			local ran = nil
+			m.run_command = function(cmd)
+				ran = cmd
+			end
+			vim.ui.input = function(_, on_confirm)
+				on_confirm("requests; rm -rf ~")
+			end
+			m.add_package()
+			assert.are.equal("uv add 'requests;' 'rm' '-rf' '~'", ran)
+		end)
+	end)
+
+	describe("run_command", function()
+		local original_notify = vim.notify
+
+		after_each(function()
+			vim.notify = original_notify
+		end)
+
+		it("reports the exit code of a failed command", function()
+			local messages = {}
+			vim.notify = function(msg)
+				table.insert(messages, msg)
+			end
+			fresh_uv().run_command("exit 3")
+			assert.is_true(vim.wait(5000, function()
+				return #messages > 0
+			end))
+			assert.are.equal("Command failed with exit code 3: exit 3", messages[#messages])
+		end)
 	end)
 
 	describe("activate_venv", function()
@@ -122,18 +175,237 @@ describe("uv.nvim", function()
 		end)
 	end)
 
-	describe("snacks picker preview", function()
-		local pattern = "^(uv %a+)"
+	describe("picker_integration", function()
+		local original_select = vim.ui.select
+		local original_input = vim.ui.input
+		local original_notify = vim.notify
+		local telescope_modules = {
+			"telescope",
+			"telescope.pickers",
+			"telescope.finders",
+			"telescope.sorters",
+			"telescope.actions",
+			"telescope.actions.state",
+		}
+		local sources, ran, telescope_spec, telescope_selected
 
-		it("extracts uv commands for help preview", function()
-			assert.are.equal("uv add", ("uv add [package]"):match(pattern))
-			assert.are.equal("uv sync", ("uv sync --all-extras"):match(pattern))
-			assert.are.equal("uv init", ("uv init"):match(pattern))
+		local function commands_keymap(picker_integration, with_snacks)
+			sources = {}
+			if with_snacks ~= false then
+				_G.Snacks = { picker = { sources = sources, preview = {} } }
+			end
+			local m = fresh_uv()
+			m.setup({ auto_commands = false, picker_integration = picker_integration })
+			m.run_command = function(cmd)
+				ran = cmd
+			end
+			return vim.fn.maparg("<leader>x", "n")
+		end
+
+		local function choose(index)
+			vim.ui.select = function(items, _, on_choice)
+				on_choice(items[index])
+			end
+		end
+
+		local function stub_telescope()
+			package.loaded["telescope"] = {}
+			package.loaded["telescope.pickers"] = {
+				new = function(_, spec)
+					return {
+						find = function()
+							telescope_spec = spec
+						end,
+					}
+				end,
+			}
+			package.loaded["telescope.finders"] = {
+				new_table = function(finder)
+					return finder
+				end,
+			}
+			package.loaded["telescope.sorters"] = { get_generic_fuzzy_sorter = function() end }
+			package.loaded["telescope.actions"] = { close = function() end }
+			package.loaded["telescope.actions.state"] = {
+				get_selected_entry = function()
+					return telescope_selected
+				end,
+			}
+		end
+
+		local function confirm_in_telescope(index)
+			telescope_selected = telescope_spec.finder.entry_maker(telescope_spec.finder.results[index])
+			local on_select
+			telescope_spec.attach_mappings(1, function(_, _, fn)
+				on_select = fn
+			end)
+			on_select()
+			return telescope_selected.display
+		end
+
+		local function in_empty_dir()
+			local dir = vim.fn.tempname()
+			vim.fn.mkdir(dir, "p")
+			vim.cmd("cd " .. vim.fn.fnameescape(dir))
+			return dir
+		end
+
+		after_each(function()
+			_G.Snacks = nil
+			vim.ui.select = original_select
+			vim.ui.input = original_input
+			vim.notify = original_notify
+			package.loaded["fzf-lua"] = nil
+			for _, name in ipairs(telescope_modules) do
+				package.loaded[name] = nil
+			end
+			ran, telescope_spec, telescope_selected = nil, nil, nil
+			pcall(vim.keymap.del, "n", "<leader>x")
 		end)
 
-		it("returns nil for non-uv items", function()
-			assert.is_nil(("Run current file"):match(pattern))
-			assert.is_nil(("Run selection"):match(pattern))
+		it("registers both and maps telescope when auto detecting telescope and snacks", function()
+			stub_telescope()
+			assert.matches("pick_uv_commands", commands_keymap(true), nil, true)
+			assert.is_not_nil(sources.uv_commands)
+		end)
+
+		it("auto detects fzf-lua when it is the only picker", function()
+			package.loaded["fzf-lua"] = { fzf_exec = function() end }
+			assert.matches("pick_uv_commands", commands_keymap(true, false), nil, true)
+		end)
+
+		it("runs the command chosen in telescope", function()
+			stub_telescope()
+			commands_keymap("telescope")
+			require("uv").pick_uv_commands()
+			assert.are.equal("uv sync", confirm_in_telescope(5))
+			assert.are.equal("uv sync", ran)
+		end)
+
+		it("offers to create a venv in telescope when there is none", function()
+			in_empty_dir()
+			stub_telescope()
+			commands_keymap("telescope")
+			require("uv").pick_uv_venv()
+			assert.are.equal("+ Create new virtual environment (uv venv)", confirm_in_telescope(1))
+			assert.are.equal("uv venv", ran)
+		end)
+
+		it("offers to create a venv in snacks when there is none", function()
+			in_empty_dir()
+			commands_keymap(true)
+			local item = sources.uv_venv.finder()[1]
+			assert.are.equal("+ Create new virtual environment (uv venv)", sources.uv_venv.format(item)[1][1])
+			sources.uv_venv.confirm({ close = function() end }, item)
+			assert.are.equal("uv venv", ran)
+		end)
+
+		it("activates the existing venv chosen through vim.ui.select", function()
+			local dir = in_empty_dir()
+			vim.fn.mkdir(dir .. "/.venv/bin", "p")
+			local label
+			vim.ui.select = function(items, opts, on_choice)
+				label = opts.format_item(items[1])
+				on_choice(items[1])
+			end
+			commands_keymap("select")
+			local m = require("uv")
+			m.config.notify_activate_venv = false
+			m.pick_uv_venv()
+			assert.are.equal("○ .venv (Activate)", label)
+			assert.are.equal(vim.fn.getcwd() .. "/.venv", vim.env.VIRTUAL_ENV)
+		end)
+
+		it("asks for a selection then runs it when Run selection is picked in normal mode", function()
+			local messages, ran_selection = {}, false
+			vim.notify = function(msg)
+				table.insert(messages, msg)
+			end
+			choose(2)
+			commands_keymap("select")
+			local m = require("uv")
+			m.run_python_selection = function()
+				ran_selection = true
+			end
+			m.pick_uv_commands()
+			assert.matches("Please select text first", messages[1], nil, true)
+			assert.is_false(ran_selection)
+			vim.api.nvim_feedkeys("V\27", "x", false)
+			assert.is_true(ran_selection)
+		end)
+
+		it("previews uv help in snacks and clears the preview for other items", function()
+			commands_keymap(true)
+			local previewed, cleared
+			_G.Snacks.picker.preview.cmd = function(cmd)
+				previewed = cmd
+			end
+			sources.uv_commands.preview({ item = { text = "uv add [package]" } })
+			sources.uv_commands.preview({
+				item = { text = "Run current file" },
+				preview = {
+					set_lines = function(_, lines)
+						cleared = lines
+					end,
+				},
+			})
+			assert.are.equal("uv add --help", previewed)
+			assert.are.same({}, cleared)
+		end)
+
+		it("auto detects snacks and registers its sources", function()
+			assert.matches("Snacks.picker.pick", commands_keymap(true), nil, true)
+			assert.is_not_nil(sources.uv_commands)
+		end)
+
+		it("runs the command confirmed in the snacks picker", function()
+			commands_keymap(true)
+			sources.uv_commands.confirm({ close = function() end }, sources.uv_commands.finder()[5])
+			assert.are.equal("uv sync", ran)
+		end)
+
+		it("uses only telescope when configured even if snacks is available", function()
+			assert.matches("pick_uv_commands", commands_keymap("telescope"), nil, true)
+			assert.is_nil(sources.uv_commands)
+		end)
+
+		it("lists commands and runs the one chosen through vim.ui.select", function()
+			local labels = {}
+			vim.ui.select = function(items, opts, on_choice)
+				for _, item in ipairs(items) do
+					table.insert(labels, opts.format_item(item))
+				end
+				on_choice(items[5])
+			end
+			assert.matches("pick_uv_commands", commands_keymap("select"), nil, true)
+			require("uv").pick_uv_commands()
+			assert.are.equal("Run current file", labels[1])
+			assert.are.equal("uv sync", ran)
+		end)
+
+		it("runs the command chosen through fzf-lua", function()
+			package.loaded["fzf-lua"] = {
+				fzf_exec = function(_, opts)
+					opts.actions.default({ "uv init" })
+				end,
+			}
+			assert.matches("pick_uv_commands", commands_keymap("fzf-lua"), nil, true)
+			require("uv").pick_uv_commands()
+			assert.are.equal("uv init", ran)
+		end)
+
+		it("shell escapes the package typed into the picker", function()
+			choose(4)
+			vim.ui.input = function(_, on_confirm)
+				on_confirm("requests; rm -rf ~")
+			end
+			commands_keymap("select")
+			require("uv").pick_uv_commands()
+			assert.are.equal("uv add 'requests;' 'rm' '-rf' '~'", ran)
+		end)
+
+		it("sets no picker keymap when disabled", function()
+			assert.are.equal("", commands_keymap(false))
 		end)
 	end)
 
@@ -168,8 +440,8 @@ describe("uv.nvim", function()
 		end)
 
 		it("uses the current selection when called from visual mode", function()
-			assert.truthy(run_selection_on(2):find('def run_selection():\n        return "Andreas"', 1, true))
-			assert.truthy(run_selection_on(6):find('def run_selection():\n        print(f"Hello', 1, true))
+			assert.matches('def run_selection():\n        return "Andreas"', run_selection_on(2), nil, true)
+			assert.matches('def run_selection():\n        print(f"Hello', run_selection_on(6), nil, true)
 		end)
 
 		it("runs with only the definitions it references", function()
@@ -181,8 +453,8 @@ describe("uv.nvim", function()
 			vim.api.nvim_buf_set_lines(0, 0, -1, false, { "def broken(:", 'print("ran")' })
 			run_selection_on(2)
 			local output = vim.fn.system({ "python3", cache_file })
-			assert.truthy(output:find("syntax error on line 1", 1, true))
-			assert.truthy(output:find("ran\n", 1, true))
+			assert.matches("syntax error on line 1", output, nil, true)
+			assert.matches("ran\n", output, nil, true)
 		end)
 	end)
 end)
