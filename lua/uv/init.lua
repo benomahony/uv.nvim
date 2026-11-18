@@ -241,11 +241,67 @@ local function open_term(cmd)
 	vim.cmd("term " .. cmd)
 end
 
+local selection_prelude = [=[
+import ast as _ast
+import sys as _sys
+import textwrap as _textwrap
+
+
+def _uv_load_context(path, start, end):
+    source = open(path).read()
+    try:
+        tree = _ast.parse(source)
+    except SyntaxError as error:
+        print(
+            f"uv.nvim: buffer has a syntax error on line {error.lineno}: {error.msg}, running selection without file context",
+            file=_sys.stderr,
+        )
+        return
+    snippet = _textwrap.dedent("\n".join(source.splitlines()[start - 1 : end]))
+    try:
+        selected = _ast.parse(snippet)
+    except SyntaxError:
+        selected = _ast.parse("def _():\n" + _textwrap.indent(snippet, "    "))
+
+    def used(node):
+        return {n.id for n in _ast.walk(node) if isinstance(n, _ast.Name)}
+
+    def bound(stmt):
+        if isinstance(stmt, (_ast.FunctionDef, _ast.AsyncFunctionDef, _ast.ClassDef)):
+            return {stmt.name}
+        if isinstance(stmt, (_ast.Import, _ast.ImportFrom)):
+            return {(a.asname or a.name).split(".")[0] for a in stmt.names}
+        if isinstance(stmt, _ast.Assign):
+            return {n.id for t in stmt.targets for n in _ast.walk(t) if isinstance(n, _ast.Name)}
+        if isinstance(stmt, (_ast.AnnAssign, _ast.AugAssign)):
+            return {n.id for n in _ast.walk(stmt.target) if isinstance(n, _ast.Name)}
+        return set()
+
+    needed = used(selected) | {"*"}
+    included = []
+    changed = True
+    while changed:
+        changed = False
+        for stmt in tree.body:
+            if stmt not in included and bound(stmt) & needed:
+                included.append(stmt)
+                needed |= used(stmt)
+                changed = True
+    body = [stmt for stmt in tree.body if stmt in included]
+    exec(compile(_ast.Module(body=body, type_ignores=[]), path, "exec"), globals())
+
+
+_uv_load_context(%s, %d, %d)
+]=]
+
 -- Function to create a temporary file with the necessary context and selected code
 function M.run_python_selection()
 	-- Get visual selection
 	---@return string
 	local function get_visual_selection()
+		if vim.fn.mode():match("^[vV\22]") then
+			vim.cmd("normal! \27")
+		end
 		local start_pos = vim.fn.getpos("'<")
 		local end_pos = vim.fn.getpos("'>")
 		local lines = vim.fn.getline(start_pos[2], end_pos[2])
@@ -267,56 +323,12 @@ function M.run_python_selection()
 		return table.concat(lines, "\n")
 	end
 
-	-- Get current buffer content to extract imports and global variables
-	---@return string[], string[]
-	local function get_buffer_globals()
-		local lines = vim.api.nvim_buf_get_lines(0, 0, -1, false)
-		local imports = {}
-		local globals = {}
-		local in_class = false
-		local class_indent = 0
-
-		for _, line in ipairs(lines) do
-			-- Detect imports
-			if line:match("^%s*import ") or line:match("^%s*from .+ import") then
-				table.insert(imports, line)
-			end
-
-			-- Detect class definitions to skip class variables
-			if line:match("^%s*class ") then
-				in_class = true
-				class_indent = line:match("^(%s*)"):len()
-			end
-
-			-- Check if we're exiting a class block
-			if in_class and line:match("^%s*[^%s#]") then
-				local current_indent = line:match("^(%s*)"):len()
-				if current_indent <= class_indent then
-					in_class = false
-				end
-			end
-
-			-- Detect global variable assignments (not in class, not inside functions)
-			if not in_class and not line:match("^%s*def ") and line:match("^%s*[%w_]+ *=") then
-				-- Check if it's not indented (global scope)
-				if not line:match("^%s%s+") then
-					table.insert(globals, line)
-				end
-			end
-		end
-
-		return imports, globals
-	end
-
 	-- Get selected code
 	local selection = get_visual_selection()
 	if selection == "" then
 		vim.notify("No code selected", vim.log.levels.WARN)
 		return
 	end
-
-	-- Get imports and globals
-	local imports, globals = get_buffer_globals()
 
 	-- Create temp file
 	local temp_dir = vim.fn.expand("$HOME") .. "/.cache/nvim/uv_run"
@@ -328,16 +340,9 @@ function M.run_python_selection()
 		return
 	end
 
-	-- Write imports
-	for _, imp in ipairs(imports) do
-		file:write(imp .. "\n")
-	end
-	file:write("\n")
-
-	-- Write globals
-	for _, glob in ipairs(globals) do
-		file:write(glob .. "\n")
-	end
+	local source_file = temp_dir .. "/run_selection_source.py"
+	vim.fn.writefile(vim.api.nvim_buf_get_lines(0, 0, -1, false), source_file)
+	file:write(string.format(selection_prelude, vim.inspect(source_file), vim.fn.line("'<"), vim.fn.line("'>")))
 	file:write("\n")
 
 	-- Write selected code
