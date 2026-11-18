@@ -158,6 +158,8 @@ describe("uv.nvim", function()
 				"",
 				"def print_hello():",
 				'    print(f"Hello, {get_name()}")',
+				"",
+				"BOOM = 1 / 0",
 			})
 		end)
 
@@ -170,12 +172,9 @@ describe("uv.nvim", function()
 			assert.truthy(run_selection_on(6):find('def run_selection():\n        print(f"Hello', 1, true))
 		end)
 
-		it("includes local function definitions", function()
-			assert.truthy(run_selection_on(6):find("def get_name() -> str:", 1, true))
-		end)
-
-		it("skips unreferenced definitions", function()
-			assert.falsy(run_selection_on(2):find("def print_hello", 1, true))
+		it("runs with only the definitions it references", function()
+			run_selection_on(6)
+			assert.are.equal("Hello, Andreas\n", vim.fn.system({ "python3", cache_file }))
 		end)
 	end)
 end)

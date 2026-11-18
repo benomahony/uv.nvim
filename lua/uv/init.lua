@@ -241,6 +241,54 @@ local function open_term(cmd)
 	vim.cmd("term " .. cmd)
 end
 
+local selection_prelude = [=[
+import ast as _ast
+import textwrap as _textwrap
+
+
+def _uv_load_context(path, start, end):
+    source = open(path).read()
+    try:
+        tree = _ast.parse(source)
+    except SyntaxError:
+        return
+    snippet = _textwrap.dedent("\n".join(source.splitlines()[start - 1 : end]))
+    try:
+        selected = _ast.parse(snippet)
+    except SyntaxError:
+        selected = _ast.parse("def _():\n" + _textwrap.indent(snippet, "    "))
+
+    def used(node):
+        return {n.id for n in _ast.walk(node) if isinstance(n, _ast.Name)}
+
+    def bound(stmt):
+        if isinstance(stmt, (_ast.FunctionDef, _ast.AsyncFunctionDef, _ast.ClassDef)):
+            return {stmt.name}
+        if isinstance(stmt, (_ast.Import, _ast.ImportFrom)):
+            return {(a.asname or a.name).split(".")[0] for a in stmt.names}
+        if isinstance(stmt, _ast.Assign):
+            return {n.id for t in stmt.targets for n in _ast.walk(t) if isinstance(n, _ast.Name)}
+        if isinstance(stmt, (_ast.AnnAssign, _ast.AugAssign)):
+            return {n.id for n in _ast.walk(stmt.target) if isinstance(n, _ast.Name)}
+        return set()
+
+    needed = used(selected) | {"*"}
+    included = []
+    changed = True
+    while changed:
+        changed = False
+        for stmt in tree.body:
+            if stmt not in included and bound(stmt) & needed:
+                included.append(stmt)
+                needed |= used(stmt)
+                changed = True
+    body = [stmt for stmt in tree.body if stmt in included]
+    exec(compile(_ast.Module(body=body, type_ignores=[]), path, "exec"), globals())
+
+
+_uv_load_context(%s, %d, %d)
+]=]
+
 -- Function to create a temporary file with the necessary context and selected code
 function M.run_python_selection()
 	-- Get visual selection
@@ -270,87 +318,11 @@ function M.run_python_selection()
 		return table.concat(lines, "\n")
 	end
 
-	-- Get current buffer content to extract imports and global variables
-	---@return string[], string[], { name: string?, lines: string[] }[]
-	local function get_buffer_globals()
-		local lines = vim.api.nvim_buf_get_lines(0, 0, -1, false)
-		local imports = {}
-		local globals = {}
-		local definitions = {}
-		local block = nil
-		local in_class = false
-		local class_indent = 0
-
-		for _, line in ipairs(lines) do
-			local name = line:match("^def ([%w_]+)")
-				or line:match("^async def ([%w_]+)")
-				or line:match("^class ([%w_]+)")
-			if name or line:match("^@") then
-				if not (block and block.name == nil) then
-					block = { lines = {} }
-					table.insert(definitions, block)
-				end
-				block.name = block.name or name
-			elseif line:match("^[^%s#%)%]}]") then
-				block = nil
-			end
-			if block then
-				table.insert(block.lines, line)
-			end
-
-			-- Detect imports
-			if line:match("^%s*import ") or line:match("^%s*from .+ import") then
-				table.insert(imports, line)
-			end
-
-			-- Detect class definitions to skip class variables
-			if line:match("^%s*class ") then
-				in_class = true
-				class_indent = line:match("^(%s*)"):len()
-			end
-
-			-- Check if we're exiting a class block
-			if in_class and line:match("^%s*[^%s#]") then
-				local current_indent = line:match("^(%s*)"):len()
-				if current_indent <= class_indent then
-					in_class = false
-				end
-			end
-
-			-- Detect global variable assignments (not in class, not inside functions)
-			if not in_class and not line:match("^%s*def ") and line:match("^%s*[%w_]+ *=") then
-				-- Check if it's not indented (global scope)
-				if not line:match("^%s%s+") then
-					table.insert(globals, line)
-				end
-			end
-		end
-
-		return imports, globals, definitions
-	end
-
 	-- Get selected code
 	local selection = get_visual_selection()
 	if selection == "" then
 		vim.notify("No code selected", vim.log.levels.WARN)
 		return
-	end
-
-	-- Get imports and globals
-	local imports, globals, definitions = get_buffer_globals()
-
-	local needed = {}
-	local referenced = selection
-	local found = true
-	while found do
-		found = false
-		for _, def in ipairs(definitions) do
-			if def.name and not needed[def] and referenced:match("%f[%w_]" .. def.name .. "%f[^%w_]") then
-				needed[def] = true
-				referenced = referenced .. "\n" .. table.concat(def.lines, "\n")
-				found = true
-			end
-		end
 	end
 
 	-- Create temp file
@@ -363,23 +335,9 @@ function M.run_python_selection()
 		return
 	end
 
-	-- Write imports
-	for _, imp in ipairs(imports) do
-		file:write(imp .. "\n")
-	end
-	file:write("\n")
-
-	-- Write globals
-	for _, glob in ipairs(globals) do
-		file:write(glob .. "\n")
-	end
-	file:write("\n")
-
-	for _, def in ipairs(definitions) do
-		if needed[def] then
-			file:write(table.concat(def.lines, "\n") .. "\n")
-		end
-	end
+	local source_file = temp_dir .. "/run_selection_source.py"
+	vim.fn.writefile(vim.api.nvim_buf_get_lines(0, 0, -1, false), source_file)
+	file:write(string.format(selection_prelude, vim.inspect(source_file), vim.fn.line("'<"), vim.fn.line("'>")))
 	file:write("\n")
 
 	-- Write selected code
