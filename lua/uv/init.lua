@@ -25,7 +25,7 @@
 ---@field auto_activate_venv boolean
 ---@field notify_activate_venv boolean
 ---@field auto_commands boolean
----@field picker_integration boolean
+---@field picker_integration boolean|"snacks"|"telescope"
 ---@field keymaps UVKeymapsConfig|false
 ---@field execution UVExecutionConfig
 
@@ -43,7 +43,7 @@ M.config = {
 	-- Auto commands for directory changes
 	auto_commands = true,
 
-	-- Integration with picker (like Telescope or other UI components)
+	-- Integration with picker: true (auto detect), false, "snacks" or "telescope"
 	picker_integration = true,
 
 	-- Keymaps to register (set to false to disable)
@@ -513,10 +513,22 @@ function M.run_file()
 	end
 end
 
+---@return "snacks"|"telescope"|nil
+local function get_picker()
+	local choice = M.config.picker_integration
+	if choice == "snacks" or (choice == true and _G.Snacks and _G.Snacks.picker) then
+		return "snacks"
+	end
+	if choice == "telescope" or (choice == true and pcall(require, "telescope")) then
+		return "telescope"
+	end
+end
+
 -- Set up command pickers for integration with UI plugins
 function M.setup_pickers()
+	local picker = get_picker()
 	-- Snacks
-	if _G.Snacks and _G.Snacks.picker then
+	if picker == "snacks" and _G.Snacks and _G.Snacks.picker then
 		Snacks.picker.sources.uv_commands = {
 			finder = function()
 				return {
@@ -636,7 +648,7 @@ function M.setup_pickers()
 
 	-- Telescope
 	local has_telescope, telescope = pcall(require, "telescope")
-	if has_telescope and telescope then
+	if picker == "telescope" and has_telescope and telescope then
 		local pickers = require("telescope.pickers")
 		local finders = require("telescope.finders")
 		local sorters = require("telescope.sorters")
@@ -826,7 +838,7 @@ function M.setup_keymaps()
 
 	-- Main UV command menu
 	if keymaps.commands then
-		if _G.Snacks and _G.Snacks.picker then
+		if get_picker() == "snacks" then
 			vim.api.nvim_set_keymap(
 				"n",
 				prefix,
@@ -840,8 +852,7 @@ function M.setup_keymaps()
 				{ noremap = true, silent = true, desc = "UV Commands" }
 			)
 		end
-		local has_telescope = pcall(require, "telescope")
-		if has_telescope then
+		if get_picker() == "telescope" then
 			vim.api.nvim_set_keymap(
 				"n",
 				prefix,
@@ -889,7 +900,7 @@ function M.setup_keymaps()
 
 	-- Environment management
 	if keymaps.venv then
-		if _G.Snacks and _G.Snacks.picker then
+		if get_picker() == "snacks" then
 			vim.api.nvim_set_keymap(
 				"n",
 				prefix .. "e",
@@ -897,8 +908,7 @@ function M.setup_keymaps()
 				{ noremap = true, silent = true, desc = "UV Environment" }
 			)
 		end
-		local has_telescope_venv = pcall(require, "telescope")
-		if has_telescope_venv then
+		if get_picker() == "telescope" then
 			vim.api.nvim_set_keymap(
 				"n",
 				prefix .. "e",

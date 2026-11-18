@@ -122,6 +122,33 @@ describe("uv.nvim", function()
 		end)
 	end)
 
+	describe("picker_integration", function()
+		local function commands_keymap(picker_integration)
+			_G.Snacks = { picker = { sources = {}, preview = {} } }
+			local m = fresh_uv()
+			m.setup({ auto_commands = false, picker_integration = picker_integration })
+			local rhs = vim.fn.maparg("<leader>x", "n")
+			_G.Snacks = nil
+			return rhs
+		end
+
+		after_each(function()
+			pcall(vim.keymap.del, "n", "<leader>x")
+		end)
+
+		it("prefers snacks when auto detecting", function()
+			assert.truthy(commands_keymap(true):find("Snacks.picker.pick", 1, true))
+		end)
+
+		it("uses telescope when configured even if snacks is available", function()
+			assert.truthy(commands_keymap("telescope"):find("pick_uv_commands", 1, true))
+		end)
+
+		it("sets no picker keymap when disabled", function()
+			assert.are.equal("", commands_keymap(false))
+		end)
+	end)
+
 	describe("snacks picker preview", function()
 		local pattern = "^(uv %a+)"
 
