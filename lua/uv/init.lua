@@ -271,24 +271,31 @@ function M.run_python_selection()
 	end
 
 	-- Get current buffer content to extract imports and global variables
-	---@return string[], string[], string[]
+	---@return string[], string[], { name: string?, lines: string[] }[]
 	local function get_buffer_globals()
 		local lines = vim.api.nvim_buf_get_lines(0, 0, -1, false)
 		local imports = {}
 		local globals = {}
 		local definitions = {}
-		local in_definition = false
+		local block = nil
 		local in_class = false
 		local class_indent = 0
 
 		for _, line in ipairs(lines) do
-			if line:match("^def ") or line:match("^async def ") or line:match("^class ") or line:match("^@") then
-				in_definition = true
+			local name = line:match("^def ([%w_]+)")
+				or line:match("^async def ([%w_]+)")
+				or line:match("^class ([%w_]+)")
+			if name or line:match("^@") then
+				if not (block and block.name == nil) then
+					block = { lines = {} }
+					table.insert(definitions, block)
+				end
+				block.name = block.name or name
 			elseif line:match("^[^%s#%)%]}]") then
-				in_definition = false
+				block = nil
 			end
-			if in_definition then
-				table.insert(definitions, line)
+			if block then
+				table.insert(block.lines, line)
 			end
 
 			-- Detect imports
@@ -332,6 +339,20 @@ function M.run_python_selection()
 	-- Get imports and globals
 	local imports, globals, definitions = get_buffer_globals()
 
+	local needed = {}
+	local referenced = selection
+	local found = true
+	while found do
+		found = false
+		for _, def in ipairs(definitions) do
+			if def.name and not needed[def] and referenced:match("%f[%w_]" .. def.name .. "%f[^%w_]") then
+				needed[def] = true
+				referenced = referenced .. "\n" .. table.concat(def.lines, "\n")
+				found = true
+			end
+		end
+	end
+
 	-- Create temp file
 	local temp_dir = vim.fn.expand("$HOME") .. "/.cache/nvim/uv_run"
 	vim.fn.mkdir(temp_dir, "p")
@@ -355,7 +376,9 @@ function M.run_python_selection()
 	file:write("\n")
 
 	for _, def in ipairs(definitions) do
-		file:write(def .. "\n")
+		if needed[def] then
+			file:write(table.concat(def.lines, "\n") .. "\n")
+		end
 	end
 	file:write("\n")
 
