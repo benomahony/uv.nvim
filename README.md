@@ -71,6 +71,7 @@ uv.nvim provides several commands:
 
 - `:UVInit` - Initialize a new uv project
 - `:UVRunFile` - Run the current Python file
+- `:UVRunTests` - Run `uv run pytest` from Neovim's working directory and show the results in a terminal
 - `:UVRunSelection` - Run the selected Python code
 - `:UVRunFunction` - Run a specific function from the current file
 - `:UVAutoActivateToggle` - Toggle auto-activate venv globally
@@ -82,6 +83,7 @@ All keymaps use the `<leader>x` prefix by default:
 
 - `<leader>x` - Show uv commands menu (requires UI picker integration)
 - `<leader>xr` - Run current file
+- `<leader>xt` - Run pytest (Space, x, t when the leader is Space)
 - `<leader>xs` - Run selected code (in visual mode)
 - `<leader>xf` - Run a specific function
 - `<leader>xe` - Environment management
@@ -279,6 +281,7 @@ require('uv').setup({
     prefix = "<leader>x",  -- Main prefix for uv commands
     commands = true,       -- Show uv commands menu (<leader>x)
     run_file = true,       -- Run current file (<leader>xr)
+    run_tests = true,      -- Run pytest (<leader>xt)
     run_selection = true,  -- Run selected code (<leader>xs)
     run_function = true,   -- Run function (<leader>xf)
     venv = true,           -- Environment management (<leader>xe)

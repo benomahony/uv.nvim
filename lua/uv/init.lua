@@ -12,6 +12,7 @@
 ---@field prefix string
 ---@field commands boolean
 ---@field run_file boolean
+---@field run_tests boolean
 ---@field run_selection boolean
 ---@field run_function boolean
 ---@field venv boolean
@@ -51,6 +52,7 @@ M.config = {
 		prefix = "<leader>x", -- Main prefix for UV commands
 		commands = true, -- Show UV commands menu (<leader>x)
 		run_file = true, -- Run current file (<leader>xr)
+		run_tests = true, -- Run pytest (<leader>xt)
 		run_selection = true, -- Run selection (<leader>xs)
 		run_function = true, -- Run function (<leader>xf)
 		venv = true, -- Environment management (<leader>xe)
@@ -239,6 +241,10 @@ local function open_term(cmd)
 		vim.cmd("vsplit")
 	end
 	vim.cmd("term " .. cmd)
+end
+
+function M.run_tests()
+	open_term("uv run pytest")
 end
 
 local selection_prelude = [=[
@@ -797,6 +803,8 @@ function M.setup_commands()
 		M.run_file()
 	end, {})
 
+	vim.api.nvim_create_user_command("UVRunTests", M.run_tests, { desc = "Run pytest with uv" })
+
 	vim.api.nvim_create_user_command("UVAddPackage", function(opts)
 		M.run_command("uv add " .. opts.args)
 	end, { nargs = 1 })
@@ -865,6 +873,10 @@ function M.setup_keymaps()
 			"<cmd>UVRunFile<CR>",
 			{ noremap = true, silent = true, desc = "UV Run Current File" }
 		)
+	end
+
+	if keymaps.run_tests then
+		vim.keymap.set("n", prefix .. "t", "<cmd>UVRunTests<CR>", { silent = true, desc = "UV Run Tests" })
 	end
 
 	-- Run selection
